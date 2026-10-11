@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { addDays, format, isAfter, parseISO, startOfWeek } from 'date-fns';
 import { useApp } from '../data/AppData';
 import type { DailyLog, Workout } from '../data/types';
@@ -7,10 +7,24 @@ import { GLASS_ML, Glass } from '../components/Glass';
 import { Ring, Sheet, Toggle, fmt } from '../components/ui';
 import { IconCheck, IconFlame, IconGrid, IconNote, IconRefresh, IconUndo } from '../components/Icons';
 import { success, tap } from '../lib/haptics';
+import { Celebration } from '../components/Celebration';
+import { Sloth } from '../components/Sloth';
+import { MOODS, STAGES, petState, stageFor } from '../lib/pet';
+import { fullnessColor } from './PetScreen';
 
 const WORKOUT_TYPES = ['Run', 'Walk', 'Strength', 'HIIT', 'Cycle', 'Yoga', 'Pilates', 'Swim', 'Class', 'Other'];
 
-export function TodayScreen({ date, setDate, openProgress }: { date: string; setDate: (d: string) => void; openProgress: () => void }) {
+export function TodayScreen({
+  date,
+  setDate,
+  openProgress,
+  openPet,
+}: {
+  date: string;
+  setDate: (d: string) => void;
+  openProgress: () => void;
+  openPet: () => void;
+}) {
   const { profile, challenge, logs, logFor, updateLog, today, health, syncHealth } = useApp();
   const [sheet, setSheet] = useState<null | { kind: 'workout'; index: number } | { kind: 'steps' } | { kind: 'calories' }>(null);
 
@@ -24,15 +38,28 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
   const doneCount = tasks.filter((t) => t.done).length;
   const allDone = tasks.length > 0 && doneCount === tasks.length;
 
-  // Buzz once when the day flips to complete.
-  const wasDone = useRef(allDone);
+  // Celebrate once when the day being viewed flips to complete (not when switching days).
+  const [party, setParty] = useState<null | { title: string; subtitle: string }>(null);
+  const wasDone = useRef({ date, done: allDone });
   useEffect(() => {
-    if (allDone && !wasDone.current) success();
-    wasDone.current = allDone;
-  }, [allDone]);
+    const prev = wasDone.current;
+    wasDone.current = { date, done: allDone };
+    if (prev.date !== date || !allDone || prev.done || !summary || !challenge) return;
+    success();
+    const petName = challenge.pet_name || 'Mochi';
+    const n = summary.timeline.find((t) => t.date === date)?.day ?? summary.completedDays;
+    const evolved = n === STAGES.find((st) => st.min === n && st.min > 0)?.min;
+    setParty({
+      title: `Day ${n} done!`,
+      subtitle: evolved ? `${petName} evolved into ${STAGES[stageFor(n)].name}!` : `${petName} is fed and happy.`,
+    });
+  }, [allDone, date, summary, challenge]);
+  const endParty = useCallback(() => setParty(null), []);
 
   if (!profile || !challenge || !summary) return null;
 
+  const petName = challenge.pet_name || 'Mochi';
+  const pet = petState(summary, challenge.treat_dates ?? [], today);
   const isToday = date === today;
   const calendarIndex = dayNumber(challenge.start_date, date); // 1 = start date
   const credited = calendarIndex >= 1 && calendarIndex <= challenge.credited_days;
@@ -183,6 +210,29 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
       </header>
 
       <main style={{ padding: '18px 16px 0', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <button
+          className="card"
+          onClick={openPet}
+          aria-label={`${petName}, ${MOODS[pet.mood].label}. Open pet`}
+          style={{ border: 0, flexDirection: 'row', alignItems: 'center', gap: 12, padding: '10px 16px 10px 8px', textAlign: 'left' }}
+        >
+          <Sloth stage={pet.stageIndex} mood={pet.mood} size={76} />
+          <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+            <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+              <span style={{ fontSize: 16, fontWeight: 800 }}>{petName}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: fullnessColor(pet.fullness) }}>{MOODS[pet.mood].label}</span>
+            </span>
+            <span className="meter" aria-hidden="true">
+              <span style={{ width: `${pet.fullness}%`, background: fullnessColor(pet.fullness) }} />
+            </span>
+            <span className="card-sub">
+              {pet.stage.name}
+              {pet.next ? ` · ${pet.daysToNext} ${pet.daysToNext === 1 ? 'day' : 'days'} to ${pet.next.name}` : ' · fully evolved'}
+              {pet.treatsAvailable > 0 ? ` · ${pet.treatsAvailable} treat${pet.treatsAvailable === 1 ? '' : 's'}` : ''}
+            </span>
+          </span>
+        </button>
+
         {lastMissed && (
           <section className="card" style={{ background: '#fff8e8', border: '1.5px solid #f5dfa8' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -439,6 +489,7 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
         }}
       />
 
+      {party && <Celebration title={party.title} subtitle={party.subtitle} onDone={endParty} />}
     </div>
   );
 }

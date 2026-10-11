@@ -20,6 +20,17 @@ The progress picture is left out on purpose. There's also a notes box for each d
 
 **Missed days extend the challenge rather than restarting it.** A day only counts when every task is ticked off. A missed day just doesn't count: it shows as **+1** on the Progress grid, and the finish line moves back a day. The challenge ends on the 75th completed day. If a day was done but not logged, fill it in and it counts again. A manual **Restart at day 1** is still in Profile. If she's already partway through when she signs up, choose **Underway** and the earlier days count as done.
 
+## Mochi the sloth
+
+A pet keeps her company through the 75 days (Pet tab, plus a card on Today):
+
+- **Evolves** with completed days: Baby → Sprout (day 7) → Mover (21) → Athlete (40) → Champion (60) → Legend (75). It gains a headband, trainers, a dumbbell, a medal and a crown along the way.
+- **Gets hungry** when days are missed in a row: hungry, then very hungry, then starving from the third missed day. It never dies. Finishing a day fills it back up.
+- **Treats:** every perfect Monday–Sunday week earns one. A treat feeds the pet for a missed day; it doesn't change the 75.
+- **Unicorn:** a rainbow unicorn flies across the screen whenever a day is completed.
+
+The pet's name and treats are saved on the challenge (`supabase/migrations/0002_pet.sql`).
+
 ## Lifesum and Apple Health
 
 Lifesum has no public API, but it writes the food you log to **Apple Health** as *Dietary Energy*. The app reads calories from Apple Health, so the Lifesum integration comes for free once Health is connected. Steps, water and workouts come from the same place.
@@ -35,7 +46,7 @@ Both are optional. Everything can be typed in by hand.
 
 ### 1. Supabase
 
-1. In the [SQL editor](https://supabase.com/dashboard/project/vublvpjshnkybdilzcog/sql/new), paste and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql). It creates `profiles`, `challenges` and `daily_logs` with row-level security, so each person only sees their own rows. It also creates the `ingest_health` function the Shortcut uses.
+1. In the [SQL editor](https://supabase.com/dashboard/project/vublvpjshnkybdilzcog/sql/new), paste and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), then [`0002_pet.sql`](supabase/migrations/0002_pet.sql). It creates `profiles`, `challenges` and `daily_logs` with row-level security, so each person only sees their own rows. It also creates the `ingest_health` function the Shortcut uses.
 2. Under **Authentication → URL Configuration**, set the Site URL to wherever the app is hosted, so confirmation emails link back to it.
 3. `.env` already holds the project URL and publishable key. Both are public by design, and row-level security protects the data. Put anything secret in `.env.local`, which git ignores.
 

@@ -25,6 +25,7 @@ export interface Repo {
   listChallenges(): Promise<Challenge[]>;
   startChallenge(startDate: string, creditedDays?: number): Promise<Challenge>;
   endChallenge(id: string, status: 'reset' | 'completed', endedOn: string): Promise<void>;
+  updateChallenge(id: string, patch: Pick<Partial<Challenge>, 'pet_name' | 'treat_dates'>): Promise<void>;
 
   getLogs(from: string, to: string): Promise<DailyLog[]>;
   /** Save a day. `fields` limits the write to what changed, so a stale screen can't clobber synced data. */
@@ -162,6 +163,13 @@ export class SupabaseRepo implements Repo {
 
   async endChallenge(id: string, status: 'reset' | 'completed', endedOn: string) {
     check(await this.sb.from('challenges').update({ status, ended_on: endedOn }).eq('id', id));
+  }
+
+  async updateChallenge(id: string, patch: Pick<Partial<Challenge>, 'pet_name' | 'treat_dates'>) {
+    const { error } = await this.sb.from('challenges').update(patch).eq('id', id);
+    if (error && /pet_name|treat_dates/.test(error.message))
+      throw new Error('The pet needs one more database update: run supabase/migrations/0002_pet.sql in Supabase.');
+    if (error) throw new Error(error.message);
   }
 
   async getLogs(from: string, to: string) {
@@ -312,6 +320,13 @@ export class LocalRepo implements Repo {
     this.mutate((s) => {
       const c = s.challenges.find((x) => x.id === id);
       if (c) Object.assign(c, { status, ended_on: endedOn });
+    });
+  }
+
+  async updateChallenge(id: string, patch: Pick<Partial<Challenge>, 'pet_name' | 'treat_dates'>) {
+    this.mutate((s) => {
+      const c = s.challenges.find((x) => x.id === id);
+      if (c) Object.assign(c, patch);
     });
   }
 

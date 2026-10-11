@@ -5,12 +5,13 @@ import { Onboarding } from './screens/Onboarding';
 import { TodayScreen } from './screens/TodayScreen';
 import { ProgressScreen } from './screens/ProgressScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
+import { PetScreen } from './screens/PetScreen';
 import { Toast } from './components/ui';
-import { IconGrid, IconHome, IconUser } from './components/Icons';
+import { IconGrid, IconHome, IconLeaf, IconUser } from './components/Icons';
 import { tap } from './lib/haptics';
 import { setStatusBar } from './lib/statusbar';
 
-type Tab = 'today' | 'progress' | 'profile';
+type Tab = 'today' | 'progress' | 'pet' | 'profile';
 
 function Splash() {
   return (
@@ -71,12 +72,14 @@ function Main() {
   const tabs: { id: Tab; label: string; icon: typeof IconHome }[] = [
     { id: 'today', label: 'Today', icon: IconHome },
     { id: 'progress', label: 'Progress', icon: IconGrid },
+    { id: 'pet', label: 'Pet', icon: IconLeaf },
     { id: 'profile', label: 'Profile', icon: IconUser },
   ];
 
   return (
     <div className="shell">
-      {tab === 'today' && <TodayScreen key="today" date={date} setDate={setDate} openProgress={() => setTab('progress')} />}
+      {tab === 'today' && <TodayScreen key="today" date={date} setDate={setDate} openProgress={() => setTab('progress')} openPet={() => setTab('pet')} />}
+      {tab === 'pet' && <PetScreen />}
       {tab === 'progress' && (
         <ProgressScreen
           openDay={(d) => {

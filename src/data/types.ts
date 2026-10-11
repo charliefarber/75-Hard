@@ -48,6 +48,10 @@ export interface Challenge {
   status: ChallengeStatus;
   ended_on: string | null;
   created_at: string;
+  /** The challenge pet's name (column added in 0002_pet.sql). */
+  pet_name?: string;
+  /** Missed days a treat was spent on (0002_pet.sql). */
+  treat_dates?: string[];
 }
 
 export interface AuthUser {
