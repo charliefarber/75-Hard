@@ -1,5 +1,7 @@
 # 75 Hard
 
+**Live:** https://hard-75.netlify.app
+
 A simple, good-looking daily tracker for the 75 Hard challenge. It's styled after Lifesum's forest green, and it's built as a React app that ships as a website now and as an iPhone app later.
 
 **What it tracks each day**
