@@ -35,7 +35,7 @@ Both are optional. Everything can be typed in by hand.
 
 1. In the [SQL editor](https://supabase.com/dashboard/project/vublvpjshnkybdilzcog/sql/new), paste and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql). It creates `profiles`, `challenges` and `daily_logs` with row-level security, so each person only sees their own rows. It also creates the `ingest_health` function the Shortcut uses.
 2. Under **Authentication → URL Configuration**, set the Site URL to wherever the app is hosted, so confirmation emails link back to it.
-3. Copy `.env.example` to `.env` and fill in the anon / publishable key from **Project Settings → API Keys**.
+3. `.env` already holds the project URL and publishable key. Both are public by design, and row-level security protects the data. Put anything secret in `.env.local`, which git ignores.
 
 Without keys the app still runs, but data is saved only on that device.
 
@@ -50,7 +50,7 @@ npm run build      # static site in dist/
 
 ### 3. Put it on her phone (today)
 
-Deploy `dist/` to any static host. On Vercel or Netlify that means: import the repo, set the build command to `npm run build`, the output directory to `dist`, and add the two `VITE_SUPABASE_*` env vars. Then open the site in Safari and use **Share → Add to Home Screen**. It runs full-screen with its own icon.
+Deploy `dist/` to any static host. On Vercel or Netlify that means: import the repo, set the build command to `npm run build`, the output directory to `dist`, (the committed `.env` supplies the Supabase settings). Then open the site in Safari and use **Share → Add to Home Screen**. It runs full-screen with its own icon.
 
 ### 4. Make it a real iPhone app (later)
 
