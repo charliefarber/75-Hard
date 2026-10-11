@@ -8,12 +8,12 @@ A simple, good-looking daily tracker for the 75 Hard challenge. It's styled afte
 
 | Task | How it's logged |
 | --- | --- |
-| Workout 1 and 2 (45 min each, one outdoors) | Tap to log type, length and outdoors, or auto-filled from Apple Health workouts |
-| Water (1 gallon: 3.8 L US, or 4.5 L UK) | +250 / +500 ml buttons; also picks up water logged in Lifesum |
+| Workout 1 and 2 (45 min each, indoors or out) | Tap to log type and length, or auto-filled from Apple Health workouts |
+| Water (any goal; presets for 2–4.5 L) | Tap glasses (250 ml each); also picks up water logged in Lifesum |
 | Read 10 pages | Switch |
 | Follow a diet, no cheat meals | Toggles |
 | No alcohol | Toggle |
-| 10,000 steps (optional, on by default) | Apple Health, the iPhone Shortcut, or typed in |
+| Steps: weekly goal (70,000 by default), not a daily pass/fail | Apple Health, the iPhone Shortcut, or typed in |
 | Calories | Lifesum, through Apple Health, or typed in (shown against the calorie target, not pass/fail) |
 
 The progress picture is left out on purpose. There's also a notes box for each day.

@@ -1,10 +1,10 @@
-import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns';
+import { addDays, differenceInCalendarDays, format, parseISO, startOfWeek } from 'date-fns';
 import type { Challenge, DailyLog, Profile } from '../data/types';
 import { emptyLog } from '../data/types';
 
 export const CHALLENGE_LENGTH = 75;
 
-export type TaskId = 'workout1' | 'workout2' | 'water' | 'reading' | 'diet' | 'alcohol' | 'steps';
+export type TaskId = 'workout1' | 'workout2' | 'water' | 'reading' | 'diet' | 'alcohol';
 
 export interface TaskStatus {
   id: TaskId;
@@ -31,40 +31,36 @@ export function finishDate(startDate: string): string {
 }
 
 /**
- * The 75 Hard tasks for one day. The two workouts must each hit the minimum
- * length, and at least one of them has to be outdoors.
+ * The daily tasks that decide whether a day counts: two workouts of the minimum
+ * length (indoors or out), water, reading, diet and no alcohol. Steps are a
+ * weekly goal instead (see weekSteps) and never fail a day.
  */
-export function taskStatuses(log: DailyLog | undefined, profile: Pick<Profile, 'water_goal_ml' | 'workout_minutes' | 'reading_goal_pages' | 'step_goal' | 'steps_required'>): TaskStatus[] {
+export function taskStatuses(log: DailyLog | undefined, profile: Pick<Profile, 'water_goal_ml' | 'workout_minutes' | 'reading_goal_pages'>): TaskStatus[] {
   const l = log ?? emptyLog('');
   const min = profile.workout_minutes;
-  const [w1, w2] = l.workouts;
-  const w1ok = !!w1?.done && (w1.minutes || 0) >= min;
-  const w2ok = !!w2?.done && (w2.minutes || 0) >= min;
-  const anyOutdoor = !!(w1?.done && w1.outdoor) || !!(w2?.done && w2.outdoor);
-  const bothDone = w1ok && w2ok;
-
-  const tasks: TaskStatus[] = [
-    {
-      id: 'workout1',
-      label: 'Workout 1',
-      done: w1ok,
-      hint: w1?.done && !w1ok ? `Needs ${min} min` : undefined,
-    },
-    {
-      id: 'workout2',
-      label: 'Workout 2',
-      done: w2ok && anyOutdoor,
-      hint: bothDone && !anyOutdoor ? 'One workout must be outdoors' : w2?.done && !w2ok ? `Needs ${min} min` : undefined,
-    },
+  const workout = (i: number): TaskStatus => {
+    const w = l.workouts[i];
+    const ok = !!w?.done && (w.minutes || 0) >= min;
+    return { id: i === 0 ? 'workout1' : 'workout2', label: `Workout ${i + 1}`, done: ok, hint: w?.done && !ok ? `Needs ${min} min` : undefined };
+  };
+  return [
+    workout(0),
+    workout(1),
     { id: 'water', label: 'Water', done: l.water_ml >= profile.water_goal_ml },
     { id: 'reading', label: 'Reading', done: l.pages_read >= profile.reading_goal_pages },
     { id: 'diet', label: 'Diet', done: l.followed_diet && l.no_cheat_meal },
     { id: 'alcohol', label: 'No alcohol', done: l.no_alcohol },
   ];
-  if (profile.steps_required) {
-    tasks.push({ id: 'steps', label: 'Steps', done: (l.steps ?? 0) >= profile.step_goal });
-  }
-  return tasks;
+}
+
+/** Monday–Sunday step total for the week containing `date`. */
+export function weekSteps(logs: Record<string, DailyLog>, date: string): { total: number; days: { date: string; steps: number }[]; start: string } {
+  const start = startOfWeek(parseISO(date), { weekStartsOn: 1 });
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = toISODate(addDays(start, i));
+    return { date: d, steps: logs[d]?.steps ?? 0 };
+  });
+  return { total: days.reduce((a, b) => a + b.steps, 0), days, start: toISODate(start) };
 }
 
 export function isDayComplete(log: DailyLog | undefined, profile: Parameters<typeof taskStatuses>[1]): boolean {

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { addDays, format, isAfter, parseISO, startOfWeek } from 'date-fns';
 import { useApp } from '../data/AppData';
 import type { DailyLog, Workout } from '../data/types';
-import { dayNumber, litres, summarise, taskStatuses, toISODate } from '../lib/challenge';
+import { dayNumber, litres, summarise, taskStatuses, toISODate, weekSteps } from '../lib/challenge';
+import { GLASS_ML, Glass } from '../components/Glass';
 import { Ring, Sheet, Toggle, fmt } from '../components/ui';
 import { IconCheck, IconFlame, IconGrid, IconNote, IconRefresh, IconUndo } from '../components/Icons';
 import { success, tap } from '../lib/haptics';
@@ -68,8 +69,10 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
   const calories = log.calories ?? 0;
   const healthSourced = (s: string | null) => s === 'health' || s === 'shortcut';
 
-  const waterSegments = 8;
-  const perSeg = profile.water_goal_ml / waterSegments;
+  const glassCount = Math.min(32, Math.max(Math.ceil(profile.water_goal_ml / GLASS_ML), Math.ceil(log.water_ml / GLASS_ML)));
+  const stepWeek = weekSteps(logs, date);
+  const weekGoal = profile.step_goal * 7;
+  const k = (n: number) => (n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k` : String(n));
 
   return (
     <div className="screen">
@@ -219,19 +222,24 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
         )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-          <button className="card" style={{ border: 0, textAlign: 'left', gap: 12 }} onClick={() => setSheet({ kind: 'steps' })} aria-label={`Steps: ${fmt(steps)}. Edit`}>
+          <button
+            className="card"
+            style={{ border: 0, textAlign: 'left', gap: 12 }}
+            onClick={() => setSheet({ kind: 'steps' })}
+            aria-label={`Steps: ${fmt(stepWeek.total)} of ${fmt(weekGoal)} this week, ${fmt(steps)} today. Edit today`}
+          >
             <div className="card-head">
               <span style={{ fontSize: 14, fontWeight: 700 }}>Steps</span>
-              {healthSourced(log.steps_source) ? <span className="chip">Health</span> : null}
+              <span className="chip">{healthSourced(log.steps_source) ? 'Health' : 'Week'}</span>
             </div>
             <div style={{ alignSelf: 'center' }}>
-              <Ring size={100} stroke={10} value={steps} max={profile.step_goal} color="var(--steps)" track="var(--steps-tint)" label={`${fmt(steps)} of ${fmt(profile.step_goal)} steps`}>
-                <span style={{ fontSize: 18, fontWeight: 800 }}>{fmt(steps)}</span>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>of {profile.step_goal >= 1000 ? `${profile.step_goal / 1000}k` : profile.step_goal}</span>
+              <Ring size={100} stroke={10} value={stepWeek.total} max={weekGoal} color="var(--steps)" track="var(--steps-tint)" label={`${fmt(stepWeek.total)} of ${fmt(weekGoal)} steps this week`}>
+                <span style={{ fontSize: 18, fontWeight: 800 }}>{k(stepWeek.total)}</span>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>of {k(weekGoal)} wk</span>
               </Ring>
             </div>
             <span className="card-sub" style={{ textAlign: 'center' }}>
-              {steps >= profile.step_goal ? 'Goal hit' : `${fmt(profile.step_goal - steps)} to go`}
+              <strong style={{ color: 'var(--ink)' }}>{fmt(steps)}</strong> {isToday ? 'today' : 'that day'}
             </span>
           </button>
 
@@ -278,53 +286,39 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
               <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--water)' }}>{litres(log.water_ml)}</span> / {litres(profile.water_goal_ml, 1)} L
             </span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${waterSegments}, minmax(0, 1fr))`, gap: 6 }} aria-hidden="true">
-            {Array.from({ length: waterSegments }, (_, i) => {
-              const fill = Math.max(0, Math.min(1, (log.water_ml - i * perSeg) / perSeg));
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, minmax(0, 1fr))', rowGap: 8, justifyItems: 'center' }}>
+            {Array.from({ length: glassCount }, (_, i) => {
+              const fill = (log.water_ml - i * GLASS_ML) / GLASS_ML;
+              const full = fill >= 1;
+              const isLastFull = full && log.water_ml < (i + 2) * GLASS_ML;
               return (
-                <div
+                <button
                   key={i}
-                  style={{
-                    height: 40,
-                    borderRadius: 10,
-                    background: 'var(--water-empty)',
-                    border: `2px solid ${fill >= 1 ? 'var(--water-fill)' : '#d4e3f4'}`,
-                    position: 'relative',
-                    overflow: 'hidden',
-                  }}
+                  aria-label={full ? `Glass ${i + 1}, full. Tap to ${isLastFull ? 'empty' : 'set water to here'}` : `Glass ${i + 1}. Tap to fill`}
+                  onClick={() => (tap(), set({ water_ml: isLastFull ? i * GLASS_ML : (i + 1) * GLASS_ML }))}
+                  style={{ border: 0, background: 'none', padding: 4, borderRadius: 10, display: 'flex' }}
                 >
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      height: `${fill * 100}%`,
-                      background: 'var(--water-fill)',
-                      transition: 'height 0.5s var(--ease)',
-                    }}
-                  />
-                </div>
+                  <Glass fill={fill} />
+                </button>
               );
             })}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            {[250, 500].map((ml) => (
-              <button
-                key={ml}
-                className="btn"
-                style={{ flex: 1, height: 44, borderRadius: 14, background: 'var(--water-tint)', color: 'var(--water)', fontSize: 14 }}
-                onClick={() => (tap(), set({ water_ml: log.water_ml + ml }))}
-              >
-                + {ml} ml
-              </button>
-            ))}
+            <button
+              className="btn"
+              style={{ flex: 1, height: 48, borderRadius: 14, background: 'var(--water-tint)', color: 'var(--water)', fontSize: 15 }}
+              onClick={() => (tap(), set({ water_ml: log.water_ml + GLASS_ML }))}
+            >
+              <Glass fill={1} size={24} />
+              Add a glass
+              <span style={{ fontWeight: 600, opacity: 0.75 }}>· {GLASS_ML} ml</span>
+            </button>
             <button
               className="icon-btn"
-              aria-label="Remove 250 ml"
-              style={{ background: 'var(--surface-2)', color: 'var(--muted)' }}
+              aria-label="Take away a glass"
+              style={{ background: 'var(--surface-2)', color: 'var(--muted)', height: 48, width: 48 }}
               disabled={log.water_ml === 0}
-              onClick={() => (tap(), set({ water_ml: Math.max(0, log.water_ml - 250) }))}
+              onClick={() => (tap(), set({ water_ml: Math.max(0, log.water_ml - GLASS_ML) }))}
             >
               <IconUndo size={20} />
             </button>
@@ -358,10 +352,9 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
                     {t?.hint ??
                       (done
                         ? [w.type || 'Workout', `${w.minutes} min`, w.source === 'health' ? 'from Apple Health' : null].filter(Boolean).join(' · ')
-                        : `${profile.workout_minutes} min${i === 1 ? ' · one must be outdoors' : ''}`)}
+                        : `${profile.workout_minutes} min · indoors or out`)}
                   </span>
                 </span>
-                {done && w.outdoor && <span className="chip">Outdoor</span>}
                 {!done && (
                   <span className="btn btn-sm btn-dark" aria-hidden="true">
                     Log
@@ -491,13 +484,11 @@ function WorkoutSheet({
 }) {
   const [type, setType] = useState('');
   const [minutes, setMinutes] = useState(minMinutes);
-  const [outdoor, setOutdoor] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setType(workout?.type ?? '');
     setMinutes(workout?.done && workout.minutes ? workout.minutes : minMinutes);
-    setOutdoor(workout?.outdoor ?? false);
   }, [open, workout, minMinutes]);
 
   const presets = [minMinutes, 60, 75, 90].filter((v, i, a) => a.indexOf(v) === i);
@@ -543,15 +534,8 @@ function WorkoutSheet({
         )}
       </div>
 
-      <div className="row" style={{ borderBottom: 0, padding: 0 }}>
-        <div className="row-text">
-          <span className="row-title">Outdoors</span>
-          <span className="row-sub">At least one of the two workouts has to be outside</span>
-        </div>
-        <Toggle checked={outdoor} onChange={setOutdoor} label="Outdoor workout" />
-      </div>
 
-      <button className="btn btn-primary btn-block" onClick={() => onSave({ done: true, minutes, type, outdoor, source: 'manual' })}>
+      <button className="btn btn-primary btn-block" onClick={() => onSave({ done: true, minutes, type, outdoor: workout?.outdoor ?? false, source: 'manual' })}>
         {workout?.done ? 'Save' : 'Mark done'}
       </button>
       {workout?.done && (

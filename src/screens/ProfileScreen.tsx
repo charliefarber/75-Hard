@@ -4,14 +4,22 @@ import { useApp } from '../data/AppData';
 import type { Profile } from '../data/types';
 import { supabaseAnonKey, supabaseUrl } from '../data/repo';
 import { litres, summarise } from '../lib/challenge';
-import { Sheet, Toggle, fmt } from '../components/ui';
+import { Sheet, fmt } from '../components/ui';
 import { IconChevron, IconCopy, IconHeart, IconLeaf } from '../components/Icons';
 
 type GoalKey = 'water_goal_ml' | 'step_goal' | 'calorie_goal' | 'workout_minutes' | 'reading_goal_pages';
 
+export const WATER_PRESETS = [
+  { ml: 2000, label: '2 L' },
+  { ml: 2500, label: '2.5 L' },
+  { ml: 3000, label: '3 L' },
+  { ml: 3785, label: 'US gallon · 3.8 L' },
+  { ml: 4546, label: 'UK gallon · 4.5 L' },
+];
+
 const GOALS: { key: GoalKey; label: string; unit: string; show: (p: Profile) => string }[] = [
   { key: 'water_goal_ml', label: 'Water', unit: 'ml', show: (p) => `${litres(p.water_goal_ml, 1)} L` },
-  { key: 'step_goal', label: 'Steps', unit: 'steps', show: (p) => fmt(p.step_goal) },
+  { key: 'step_goal', label: 'Steps', unit: 'a week', show: (p) => `${fmt(p.step_goal * 7)} a week` },
   { key: 'calorie_goal', label: 'Calorie target', unit: 'kcal', show: (p) => (p.calorie_goal ? `${fmt(p.calorie_goal)} kcal` : 'Not set') },
   { key: 'workout_minutes', label: 'Workout length', unit: 'min', show: (p) => `2 × ${p.workout_minutes} min` },
   { key: 'reading_goal_pages', label: 'Reading', unit: 'pages', show: (p) => `${p.reading_goal_pages} pages` },
@@ -126,15 +134,6 @@ export function ProfileScreen() {
             </span>
           </button>
         ))}
-        <div className="row">
-          <div className="row-text">
-            <span className="row-title" style={{ fontWeight: 600 }}>
-              Steps count towards the day
-            </span>
-            <span className="row-sub">Not an official rule, but your call</span>
-          </div>
-          <Toggle checked={profile.steps_required} onChange={(v) => updateProfile({ steps_required: v })} label="Steps count towards the day" />
-        </div>
       </section>
 
       {user?.email && <p className="card-sub" style={{ margin: '4px 4px 0' }}>Signed in as {user.email}</p>}
@@ -198,6 +197,7 @@ function GoalSheet({
     if (!field) return;
     if (field === 'name') setValue(profile.display_name);
     else if (field === 'water_goal_ml') setValue(String(profile.water_goal_ml / 1000));
+    else if (field === 'step_goal') setValue(String(profile.step_goal * 7));
     else setValue(profile[field]?.toString() ?? '');
   }, [field, profile]);
 
@@ -211,6 +211,7 @@ function GoalSheet({
     }
     const n = parseInt(value, 10);
     if (field === 'calorie_goal') return onSave({ calorie_goal: n > 0 ? n : null });
+    if (field === 'step_goal') return n > 0 ? onSave({ step_goal: Math.round(n / 7) }) : undefined;
     if (n > 0) onSave({ [field]: n } as Partial<Profile>);
   }
 
@@ -242,13 +243,17 @@ function GoalSheet({
         </div>
         {isWater && (
           <div className="chips">
-            <button type="button" className="chip-btn" onClick={() => setValue('3.785')}>
-              US gallon · 3.8 L
-            </button>
-            <button type="button" className="chip-btn" onClick={() => setValue('4.546')}>
-              UK gallon · 4.5 L
-            </button>
+            {WATER_PRESETS.map((w) => (
+              <button type="button" key={w.ml} className="chip-btn" aria-pressed={value === String(w.ml / 1000)} onClick={() => setValue(String(w.ml / 1000))}>
+                {w.label}
+              </button>
+            ))}
           </div>
+        )}
+        {field === 'step_goal' && (
+          <p className="card-sub" style={{ margin: 0 }}>
+            Steps don’t decide whether a day counts. Today shows how the week is going.
+          </p>
         )}
         {field === 'calorie_goal' && (
           <p className="card-sub" style={{ margin: 0 }}>

@@ -1,8 +1,8 @@
 import type { CSSProperties } from 'react';
 import { useMemo } from 'react';
-import { addDays, format, parseISO } from 'date-fns';
+import { addDays, addMonths, format, getDay, getDaysInMonth, parseISO, startOfMonth } from 'date-fns';
 import { useApp } from '../data/AppData';
-import { CHALLENGE_LENGTH, summarise, toISODate } from '../lib/challenge';
+import { CHALLENGE_LENGTH, summarise, toISODate, weekSteps } from '../lib/challenge';
 import { fmt } from '../components/ui';
 import { tap } from '../lib/haptics';
 
@@ -24,14 +24,32 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
   const attempt = history.findIndex((c) => c.id === challenge.id) + 1 || history.length;
   const pct = Math.round((summary.completedDays / CHALLENGE_LENGTH) * 100);
 
+  const byDate = new Map(summary.timeline.map((t) => [t.date, t]));
+  const first = parseISO(summary.timeline[0]?.date ?? challenge.start_date);
+  const last = parseISO(summary.timeline[summary.timeline.length - 1]?.date ?? challenge.start_date);
+  const months: { key: string; title: string; cells: (string | null)[] }[] = [];
+  for (let m = startOfMonth(first); m <= last; m = addMonths(m, 1)) {
+    const lead = (getDay(m) + 6) % 7; // Monday-first
+    const days = Array.from({ length: getDaysInMonth(m) }, (_, i) => toISODate(addDays(m, i)));
+    const cells: (string | null)[] = [...Array(lead).fill(null), ...days];
+    // Keep only the weeks that touch the challenge.
+    const weeks: (string | null)[][] = [];
+    for (let w = 0; w < cells.length; w += 7) weeks.push(cells.slice(w, w + 7));
+    const kept = weeks.filter((wk) => wk.some((c) => c && byDate.has(c)));
+    if (kept.length) months.push({ key: toISODate(m), title: format(m, 'MMMM yyyy'), cells: kept.flat() });
+  }
+
+  const sw = weekSteps(logs, today);
+  const weekGoal = profile.step_goal * 7;
+  const daysLeft = sw.days.filter((d) => d.date > today).length + 1; // including today
+  const perDayNeeded = Math.max(0, Math.ceil((weekGoal - sw.total) / daysLeft));
+
   const last7 = Array.from({ length: 7 }, (_, i) => {
     const d = toISODate(addDays(parseISO(today), i - 6));
     const l = logs[d];
     return { d, label: format(parseISO(d), 'EEEEE'), steps: l?.steps ?? 0, water: l?.water_ml ?? 0 };
   });
-  const loggedSteps = last7.filter((x) => x.steps > 0);
-  const avgSteps = loggedSteps.length ? Math.round(loggedSteps.reduce((a, b) => a + b.steps, 0) / loggedSteps.length) : 0;
-  const chartMax = Math.max(profile.step_goal * 1.4, ...last7.map((x) => x.steps));
+  const chartMax = Math.max(profile.step_goal * 1.4, ...sw.days.map((x) => x.steps));
   const waterDays = last7.filter((x) => x.water >= profile.water_goal_ml).length;
   const past = history.filter((c) => c.status !== 'active').reverse();
 
@@ -56,88 +74,108 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
 
       <section className="card">
         <div className="card-head">
-          <h2 className="card-title">75 days</h2>
+          <h2 className="card-title">Calendar</h2>
           <span className="card-sub">Finish {format(parseISO(summary.finishDate), 'EEE d MMM')}</span>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, minmax(0, 1fr))', gap: 5 }}>
-          {summary.timeline.map((t, i) => {
-            const s = CELL[t.state];
-            const clickable = t.state !== 'future';
-            const when = format(parseISO(t.date), 'EEEE d MMMM');
-            return (
-              <button
-                key={t.date}
-                disabled={!clickable}
-                onClick={() => (tap(), openDay(t.date))}
-                aria-label={t.state === 'missed' ? `${when}: didn’t count` : `Day ${t.day}, ${when}: ${t.state === 'today' ? 'in progress' : t.state}`}
-                title={when}
-                style={{
-                  aspectRatio: '1',
-                  borderRadius: 8,
-                  background: s.bg,
-                  color: s.fg,
-                  border: `2px solid ${s.border}`,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  padding: 0,
-                  opacity: 1,
-                  transition: 'transform 0.15s var(--ease)',
-                  animation: `pop 0.4s var(--ease) ${Math.min(i, 40) * 8}ms both`,
-                }}
-              >
-                {t.day ?? '+1'}
-              </button>
-            );
-          })}
-        </div>
+        {months.map((m) => (
+          <div key={m.key} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 800 }}>{m.title}</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4, textAlign: 'center' }}>
+              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
+                <span key={i} aria-hidden="true" style={{ fontSize: 11, fontWeight: 700, color: 'var(--faint)', paddingBottom: 2 }}>
+                  {d}
+                </span>
+              ))}
+              {m.cells.map((c, i) => {
+                if (!c) return <span key={`b${i}`} />;
+                const t = byDate.get(c);
+                const dateNum = format(parseISO(c), 'd');
+                if (!t) {
+                  return (
+                    <span key={c} aria-hidden="true" style={{ aspectRatio: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: '#b7c2b9' }}>
+                      {dateNum}
+                    </span>
+                  );
+                }
+                const st = CELL[t.state];
+                const when = format(parseISO(c), 'EEEE d MMMM');
+                return (
+                  <button
+                    key={c}
+                    disabled={t.state === 'future'}
+                    onClick={() => (tap(), openDay(c))}
+                    aria-label={t.state === 'missed' ? `${when}: didn’t count` : `${when}, day ${t.day}: ${t.state === 'today' ? 'in progress' : t.state}`}
+                    style={{
+                      aspectRatio: '1',
+                      borderRadius: 10,
+                      background: st.bg,
+                      color: st.fg,
+                      border: `2px solid ${st.border}`,
+                      padding: 0,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 0,
+                      lineHeight: 1.1,
+                      opacity: 1,
+                    }}
+                  >
+                    <span style={{ fontSize: 14, fontWeight: 800 }}>{dateNum}</span>
+                    <span style={{ fontSize: 9, fontWeight: 700, opacity: 0.8 }}>{t.day ? `D${t.day}` : '+1'}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
         <div style={{ display: 'flex', gap: 14, fontSize: 12, color: 'var(--muted)', flexWrap: 'wrap' }}>
           <Legend swatch={{ background: 'var(--green)' }} label="Complete" />
           <Legend swatch={{ border: '2px solid var(--green)' }} label="Today" />
-          <Legend swatch={{ background: '#fdf0d8', border: '2px solid #f5dfa8' }} label="Didn’t count (+1 day)" />
+          <Legend swatch={{ background: '#fdf0d8', border: '2px solid #f5dfa8' }} label="Didn’t count (+1)" />
+          <Legend swatch={{ background: 'var(--line)' }} label="To come" />
         </div>
       </section>
 
       <section className="card">
         <div className="card-head" style={{ alignItems: 'baseline' }}>
-          <h2 className="card-title">Steps, last 7 days</h2>
+          <h2 className="card-title">Steps this week</h2>
           <span className="card-sub">
-            avg <strong style={{ color: 'var(--ink)', fontSize: 14 }}>{fmt(avgSteps)}</strong>
+            <strong style={{ color: 'var(--ink)', fontSize: 15 }}>{fmt(sw.total)}</strong> / {fmt(weekGoal)}
           </span>
         </div>
+        <div style={{ height: 10, borderRadius: 5, background: 'var(--steps-tint)', overflow: 'hidden' }} aria-hidden="true">
+          <div style={{ height: '100%', width: `${Math.min(100, (sw.total / weekGoal) * 100)}%`, background: 'var(--steps)', borderRadius: 5, transition: 'width 0.6s var(--ease)' }} />
+        </div>
+        <span className="card-sub">
+          {sw.total >= weekGoal
+            ? 'Weekly goal hit. Nice.'
+            : `${fmt(perDayNeeded)} a day from here hits ${fmt(weekGoal)} by Sunday.`}
+        </span>
         <div
           role="img"
-          aria-label={`Steps for the last 7 days: ${last7.map((x) => `${format(parseISO(x.d), 'EEEE')} ${fmt(x.steps)}`).join(', ')}`}
-          style={{ position: 'relative', height: 130, display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 10, alignItems: 'end' }}
+          aria-label={`Steps this week: ${sw.days.map((x) => `${format(parseISO(x.date), 'EEEE')} ${fmt(x.steps)}`).join(', ')}`}
+          style={{ position: 'relative', height: 110, display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 10, alignItems: 'end' }}
         >
-          <div
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: `${(profile.step_goal / chartMax) * 100}%`,
-              borderTop: '1.5px dashed #b7c2b9',
-            }}
-          >
-            <span style={{ position: 'absolute', right: 0, top: -18, fontSize: 10, fontWeight: 700, color: 'var(--muted)' }}>
-              {fmt(profile.step_goal)}
-            </span>
+          <div style={{ position: 'absolute', left: 0, right: 0, bottom: `${(profile.step_goal / chartMax) * 100}%`, borderTop: '1.5px dashed #b7c2b9' }}>
+            <span style={{ position: 'absolute', right: 0, top: -18, fontSize: 10, fontWeight: 700, color: 'var(--muted)' }}>{fmt(profile.step_goal)} avg</span>
           </div>
-          {last7.map((x) => (
+          {sw.days.map((x) => (
             <div
-              key={x.d}
+              key={x.date}
               style={{
                 height: `${Math.max(2, (x.steps / chartMax) * 100)}%`,
                 borderRadius: '8px 8px 4px 4px',
-                background: x.steps >= profile.step_goal ? 'var(--steps)' : 'var(--steps-soft)',
+                background: x.date > today ? 'transparent' : x.steps >= profile.step_goal ? 'var(--steps)' : 'var(--steps-soft)',
                 transition: 'height 0.6s var(--ease)',
               }}
             />
           ))}
         </div>
         <div aria-hidden="true" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 10, fontSize: 11, fontWeight: 600, color: 'var(--muted)', textAlign: 'center' }}>
-          {last7.map((x) => (
-            <span key={x.d} style={x.d === today ? { color: 'var(--ink)', fontWeight: 800 } : undefined}>
-              {x.label}
+          {sw.days.map((x) => (
+            <span key={x.date} style={x.date === today ? { color: 'var(--ink)', fontWeight: 800 } : undefined}>
+              {format(parseISO(x.date), 'EEEEE')}
             </span>
           ))}
         </div>

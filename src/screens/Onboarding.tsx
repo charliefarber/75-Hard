@@ -3,6 +3,7 @@ import { addDays, format, parseISO } from 'date-fns';
 import { useApp } from '../data/AppData';
 import { CHALLENGE_LENGTH, finishDate, toISODate, todayISO } from '../lib/challenge';
 import { Stepper, Toggle } from '../components/ui';
+import { WATER_PRESETS } from './ProfileScreen';
 
 type Start = 'today' | 'tomorrow' | 'already';
 
@@ -13,7 +14,8 @@ export function Onboarding() {
   const [credit, setCredit] = useState(true);
   const [water, setWater] = useState(profile?.water_goal_ml ?? 3785);
   const [calories, setCalories] = useState(profile?.calorie_goal?.toString() ?? '');
-  const [stepsRequired, setStepsRequired] = useState(profile?.steps_required ?? true);
+  const [weeklySteps, setWeeklySteps] = useState(String((profile?.step_goal ?? 10000) * 7));
+  const [waterText, setWaterText] = useState(String((profile?.water_goal_ml ?? 3785) / 1000));
   const [busy, setBusy] = useState(false);
 
   const today = todayISO();
@@ -38,7 +40,7 @@ export function Onboarding() {
       await updateProfile({
         water_goal_ml: water,
         calorie_goal: Number.isFinite(cal) && cal > 0 ? cal : null,
-        steps_required: stepsRequired,
+        step_goal: Math.max(1, Math.round((parseInt(weeklySteps, 10) || 70000) / 7)),
       });
       await startChallenge(startDate, start === 'already' && credit ? currentDay - 1 : 0);
     } finally {
@@ -94,14 +96,39 @@ export function Onboarding() {
         </section>
 
         <section className="card">
-          <h2 className="card-title">Daily water</h2>
-          <div className="segmented">
-            <button aria-pressed={water === 3785} onClick={() => setWater(3785)}>
-              3.8 L · US gallon
-            </button>
-            <button aria-pressed={water === 4546} onClick={() => setWater(4546)}>
-              4.5 L · UK gallon
-            </button>
+          <label className="field">
+            <span className="card-title" style={{ color: 'var(--ink)' }}>
+              Daily water
+            </span>
+            <div style={{ position: 'relative' }}>
+              <input
+                className="input"
+                inputMode="decimal"
+                value={waterText}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/[^\d.,]/g, '');
+                  setWaterText(v);
+                  const l = parseFloat(v.replace(',', '.'));
+                  if (l > 0) setWater(Math.round(l * 1000));
+                }}
+              />
+              <span style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)', fontWeight: 600 }}>litres</span>
+            </div>
+          </label>
+          <div className="chips">
+            {WATER_PRESETS.map((w) => (
+              <button
+                key={w.ml}
+                className="chip-btn"
+                aria-pressed={water === w.ml}
+                onClick={() => {
+                  setWater(w.ml);
+                  setWaterText(String(w.ml / 1000));
+                }}
+              >
+                {w.label}
+              </button>
+            ))}
           </div>
         </section>
 
@@ -122,13 +149,21 @@ export function Onboarding() {
               onChange={(e) => setCalories(e.target.value.replace(/\D/g, ''))}
             />
           </label>
-          <div className="row" style={{ borderBottom: 0, padding: 0 }}>
-            <div className="row-text">
-              <span className="row-title">10,000 steps every day</span>
-              <span className="row-sub">Counts towards finishing each day</span>
-            </div>
-            <Toggle checked={stepsRequired} onChange={setStepsRequired} label="Require 10,000 steps" />
-          </div>
+          <label className="field">
+            <span className="card-title" style={{ color: 'var(--ink)' }}>
+              Weekly steps
+            </span>
+            <span className="card-sub" style={{ fontWeight: 500 }}>
+              Tracked across the week, so a quiet day doesn’t cost you the day.
+            </span>
+            <input
+              className="input"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={weeklySteps}
+              onChange={(e) => setWeeklySteps(e.target.value.replace(/\D/g, ''))}
+            />
+          </label>
         </section>
 
         <button className="btn btn-primary btn-block" style={{ height: 56, borderRadius: 18 }} onClick={go} disabled={busy}>

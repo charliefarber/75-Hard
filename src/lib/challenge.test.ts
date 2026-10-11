@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayNumber, finishDate, isDayComplete, summarise, taskStatuses } from './challenge';
+import { dayNumber, finishDate, isDayComplete, summarise, taskStatuses, weekSteps } from './challenge';
 import { emptyLog, type DailyLog } from '../data/types';
 
 const profile = { water_goal_ml: 3785, workout_minutes: 45, reading_goal_pages: 10, step_goal: 10000, steps_required: true };
@@ -38,12 +38,10 @@ describe('tasks', () => {
     expect(isDayComplete(perfect('2026-10-11'), profile)).toBe(true);
   });
 
-  it('needs one outdoor workout', () => {
+  it('workouts can be indoors or outdoors', () => {
     const l = perfect('2026-10-11');
     l.workouts[0].outdoor = false;
-    const t = taskStatuses(l, profile);
-    expect(t.find((x) => x.id === 'workout2')?.done).toBe(false);
-    expect(t.find((x) => x.id === 'workout2')?.hint).toMatch(/outdoors/);
+    expect(isDayComplete(l, profile)).toBe(true);
   });
 
   it('needs workouts to be long enough', () => {
@@ -52,11 +50,17 @@ describe('tasks', () => {
     expect(isDayComplete(l, profile)).toBe(false);
   });
 
-  it('steps only count when required', () => {
+  it('steps never fail a day', () => {
     const l = perfect('2026-10-11');
     l.steps = 4000;
-    expect(isDayComplete(l, profile)).toBe(false);
-    expect(isDayComplete(l, { ...profile, steps_required: false })).toBe(true);
+    expect(isDayComplete(l, profile)).toBe(true);
+  });
+
+  it('adds up steps Monday to Sunday', () => {
+    const logs = { '2026-10-05': { ...perfect('2026-10-05'), steps: 12000 }, '2026-10-11': { ...perfect('2026-10-11'), steps: 8000 }, '2026-10-12': { ...perfect('2026-10-12'), steps: 99999 } };
+    const w = weekSteps(logs, '2026-10-09');
+    expect(w.start).toBe('2026-10-05');
+    expect(w.total).toBe(20000);
   });
 
   it('diet needs both diet and no cheat meal', () => {
