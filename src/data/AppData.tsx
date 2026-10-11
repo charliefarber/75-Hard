@@ -99,8 +99,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     [repo],
   );
 
+  // Only the most recent load may write state, so overlapping loads (page load +
+  // auth event) can never leave the app on the wrong screen.
+  const loadSeq = useRef(0);
+
   const loadAll = useCallback(async () => {
+    const seq = ++loadSeq.current;
+    const stale = () => seq !== loadSeq.current;
     const u = await repo.currentUser();
+    if (stale()) return;
     userIdRef.current = u?.id ?? null;
     setUser(u);
     if (!u) {
@@ -110,13 +117,16 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     let p = await repo.getProfile();
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (tz && p.timezone !== tz) p = await repo.updateProfile({ timezone: tz }).catch(() => p);
+    const all = await repo.listChallenges();
+    const c = all.find((x) => x.status === 'active') ?? null;
+    if (stale()) return;
     setProfile(p);
-    const [c, all] = await Promise.all([repo.getActiveChallenge(), repo.listChallenges()]);
     setChallenge(c);
     setHistory(all);
-    await loadLogs(c);
     setStatus(c ? 'ready' : 'needsChallenge');
-  }, [repo, loadLogs]);
+    // Logs failing to load shouldn't bounce her back to set-up.
+    await loadLogs(c).catch(fail);
+  }, [repo, loadLogs, fail]);
 
   useEffect(() => {
     loadAll().catch((e) => {
@@ -127,14 +137,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const id = u?.id ?? null;
       if (id === userIdRef.current) return;
       userIdRef.current = id;
-      setUser(u);
-      if (u) loadAll().catch(fail);
-      else {
-        setStatus('signedOut');
-        setProfile(null);
-        setChallenge(null);
-        setLogs({});
-      }
+      // Supabase asks that no other Supabase calls run inside its auth callback,
+      // so hand the reload off to the next tick.
+      setTimeout(() => {
+        setUser(u);
+        if (u) loadAll().catch(fail);
+        else {
+          loadSeq.current++;
+          setStatus('signedOut');
+          setProfile(null);
+          setChallenge(null);
+          setLogs({});
+        }
+      }, 0);
     });
     healthAvailable().then((available) => setHealth((h) => ({ ...h, available })));
     return off;
@@ -268,9 +283,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       try {
         const c = await repo.startChallenge(startDate, creditedDays);
         setChallenge(c);
-        setHistory((h) => [...h, c]);
-        await loadLogs(c);
+        setHistory((h) => (h.some((x) => x.id === c.id) ? h : [...h, c]));
         setStatus('ready');
+        await loadLogs(c).catch(fail);
       } catch (e) {
         fail(e);
       }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import { useApp } from '../data/AppData';
 import { CHALLENGE_LENGTH, finishDate, toISODate, todayISO } from '../lib/challenge';
@@ -27,16 +27,24 @@ export function Onboarding() {
   const restarted = history.some((c) => c.status === 'reset');
   const name = profile?.display_name;
 
+  const submitting = useRef(false);
+
   async function go() {
+    if (submitting.current) return; // ignore a double tap
+    submitting.current = true;
     setBusy(true);
-    const cal = parseInt(calories, 10);
-    await updateProfile({
-      water_goal_ml: water,
-      calorie_goal: Number.isFinite(cal) && cal > 0 ? cal : null,
-      steps_required: stepsRequired,
-    });
-    await startChallenge(startDate, start === 'already' && credit ? currentDay - 1 : 0);
-    setBusy(false);
+    try {
+      const cal = parseInt(calories, 10);
+      await updateProfile({
+        water_goal_ml: water,
+        calorie_goal: Number.isFinite(cal) && cal > 0 ? cal : null,
+        steps_required: stepsRequired,
+      });
+      await startChallenge(startDate, start === 'already' && credit ? currentDay - 1 : 0);
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
   }
 
   return (

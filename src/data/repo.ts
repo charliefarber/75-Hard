@@ -144,12 +144,20 @@ export class SupabaseRepo implements Repo {
   }
 
   async startChallenge(startDate: string, creditedDays = 0) {
-    const res = await this.sb
+    const { data, error } = await this.sb
       .from('challenges')
       .insert({ start_date: startDate, credited_days: creditedDays, user_id: this.uid() })
       .select('*')
       .single();
-    return check(res) as Challenge;
+    if (!error) return data as Challenge;
+    // Already has one running (e.g. a tap that went through twice): carry on with it.
+    if (error.code === '23505') {
+      const existing = await this.getActiveChallenge();
+      if (existing) return existing;
+      console.error('[75] active challenge exists but is not readable', { user: this.userId });
+      throw new Error('You already have a challenge running, but it couldn’t be loaded. Try signing out and back in.');
+    }
+    throw new Error(error.message);
   }
 
   async endChallenge(id: string, status: 'reset' | 'completed', endedOn: string) {
