@@ -2,16 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { addDays, format, isAfter, parseISO, startOfWeek } from 'date-fns';
 import { useApp } from '../data/AppData';
 import type { DailyLog, Workout } from '../data/types';
-import { CHALLENGE_LENGTH, dayNumber, finishDate, litres, summarise, taskStatuses, toISODate } from '../lib/challenge';
-import { Ring, Sheet, Stepper, Toggle, fmt } from '../components/ui';
-import { IconBook, IconCheck, IconFlame, IconGrid, IconNote, IconRefresh, IconUndo } from '../components/Icons';
+import { dayNumber, litres, summarise, taskStatuses, toISODate } from '../lib/challenge';
+import { Ring, Sheet, Toggle, fmt } from '../components/ui';
+import { IconCheck, IconFlame, IconGrid, IconNote, IconRefresh, IconUndo } from '../components/Icons';
 import { success, tap } from '../lib/haptics';
 
 const WORKOUT_TYPES = ['Run', 'Walk', 'Strength', 'HIIT', 'Cycle', 'Yoga', 'Pilates', 'Swim', 'Class', 'Other'];
 
 export function TodayScreen({ date, setDate, openProgress }: { date: string; setDate: (d: string) => void; openProgress: () => void }) {
-  const { profile, challenge, logs, logFor, updateLog, today, health, syncHealth, restartChallenge } = useApp();
-  const [sheet, setSheet] = useState<null | { kind: 'workout'; index: number } | { kind: 'steps' } | { kind: 'calories' } | { kind: 'restart' }>(null);
+  const { profile, challenge, logs, logFor, updateLog, today, health, syncHealth } = useApp();
+  const [sheet, setSheet] = useState<null | { kind: 'workout'; index: number } | { kind: 'steps' } | { kind: 'calories' }>(null);
 
   const log = logFor(date);
   const tasks = useMemo(() => (profile ? taskStatuses(log, profile) : []), [log, profile]);
@@ -32,9 +32,13 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
 
   if (!profile || !challenge || !summary) return null;
 
-  const viewingDay = dayNumber(challenge.start_date, date);
   const isToday = date === today;
-  const credited = viewingDay <= challenge.credited_days;
+  const calendarIndex = dayNumber(challenge.start_date, date); // 1 = start date
+  const credited = calendarIndex >= 1 && calendarIndex <= challenge.credited_days;
+  const byDate = new Map(summary.timeline.map((t) => [t.date, t]));
+  const viewing = byDate.get(date);
+  const headline =
+    calendarIndex < 1 ? 'Starts soon' : viewing?.state === 'missed' ? 'Didn’t count' : `Day ${viewing?.day ?? summary.currentDay}`;
   const set = (patch: Partial<DailyLog>) => updateLog(date, (l) => ({ ...l, ...patch }));
   const setWorkout = (i: number, w: Workout) =>
     updateLog(date, (l) => ({ ...l, workouts: l.workouts.map((x, j) => (j === i ? w : x)) }));
@@ -44,7 +48,7 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
   const week = Array.from({ length: 7 }, (_, i) => {
     const d = toISODate(addDays(weekStart, i));
     const n = dayNumber(challenge.start_date, d);
-    const state = n >= 1 && n <= CHALLENGE_LENGTH ? summary.dayStates[n - 1] : null;
+    const state = byDate.get(d)?.state ?? null;
     return {
       d,
       n,
@@ -55,7 +59,10 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
     };
   });
 
-  const missed = isToday ? summary.missedDays : [];
+  // Only nudge about recent misses; older ones are visible on Progress.
+  const weekAgo = toISODate(addDays(parseISO(today), -7));
+  const missed = isToday ? summary.missedDays.filter((m) => m.date >= weekAgo) : [];
+  const lastMissed = missed[missed.length - 1];
   const steps = log.steps ?? 0;
   const calGoal = profile.calorie_goal;
   const calories = log.calories ?? 0;
@@ -84,7 +91,7 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
               {format(parseISO(date), 'EEEE d MMMM')}
             </span>
             <span style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em' }}>
-              {viewingDay < 1 ? 'Starts soon' : `Day ${Math.min(viewingDay, CHALLENGE_LENGTH)}`}{' '}
+              {headline}{' '}
               <span style={{ fontWeight: 500, color: 'var(--mint-soft)', fontSize: 20 }}>of 75</span>
             </span>
           </div>
@@ -133,7 +140,7 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
           </Ring>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
             <Stat label="Current streak" value={`${summary.streak} ${summary.streak === 1 ? 'day' : 'days'}`} icon />
-            <Stat label="Finish line" value={format(parseISO(finishDate(challenge.start_date)), 'EEE d MMM')} />
+            <Stat label="Finish line" value={format(parseISO(summary.finishDate), 'EEE d MMM')} />
           </div>
         </div>
 
@@ -173,24 +180,27 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
       </header>
 
       <main style={{ padding: '18px 16px 0', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {missed.length > 0 && (
+        {lastMissed && (
           <section className="card" style={{ background: '#fff8e8', border: '1.5px solid #f5dfa8' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <h2 className="card-title">
-                {missed.length === 1 ? `Day ${missed[0].day} isn’t complete` : `${missed.length} earlier days aren’t complete`}
+                {format(parseISO(lastMissed.date), 'EEEE')} didn’t count, so you’ve got an extra day
               </h2>
               <p className="card-sub" style={{ margin: 0, lineHeight: 1.5, color: '#6b4e12' }}>
-                75 Hard says a missed task means starting again from day 1. If you did it and just didn’t log it, fix the day instead.
+                Finish line is now {format(parseISO(summary.finishDate), 'EEEE d MMMM')}. If you did everything and just didn’t log it, fill the day in.
               </p>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-sm btn-dark" style={{ flex: 1, height: 44 }} onClick={() => setDate(missed[missed.length - 1].date)}>
-                Fix day {missed[missed.length - 1].day}
-              </button>
-              <button className="btn btn-sm btn-danger" style={{ flex: 1, height: 44 }} onClick={() => setSheet({ kind: 'restart' })}>
-                Restart at day 1
-              </button>
-            </div>
+            <button className="btn btn-sm btn-dark" style={{ height: 44 }} onClick={() => setDate(lastMissed.date)}>
+              Fill in {format(parseISO(lastMissed.date), 'EEE d MMM')}
+            </button>
+          </section>
+        )}
+
+        {viewing?.state === 'missed' && (
+          <section className="card" style={{ background: '#fff8e8', border: '1.5px solid #f5dfa8' }}>
+            <p className="card-sub" style={{ margin: 0, lineHeight: 1.5, color: '#6b4e12' }}>
+              This day didn’t count, so it added a day to the end. Tick off everything you did and it’ll count again.
+            </p>
           </section>
         )}
 
@@ -362,18 +372,13 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
           })}
         </section>
 
-        <section className="card" style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-          <span className="icon-badge" style={{ background: log.pages_read >= profile.reading_goal_pages ? 'var(--read)' : 'var(--read-tint)', color: log.pages_read >= profile.reading_goal_pages ? '#fff' : 'var(--read)', transition: 'background 0.3s' }}>
-            {log.pages_read >= profile.reading_goal_pages ? <IconCheck size={20} strokeWidth={2.6} /> : <IconBook size={20} />}
-          </span>
-          <div className="row-text">
-            <span className="row-title">Read {profile.reading_goal_pages} pages</span>
-            <span className="row-sub">Non-fiction</span>
-          </div>
-          <Stepper value={log.pages_read} onChange={(v) => set({ pages_read: v })} label="pages read" />
-        </section>
-
-        <section className="card list" aria-label="Diet">
+        <section className="card list" aria-label="Daily habits">
+          <DietRow
+            title={`Read ${profile.reading_goal_pages} pages`}
+            sub="Non-fiction"
+            checked={log.pages_read >= profile.reading_goal_pages}
+            onChange={(v) => set({ pages_read: v ? profile.reading_goal_pages : 0 })}
+          />
           <DietRow title="Followed my diet" sub="Whatever plan you picked" checked={log.followed_diet} onChange={(v) => set({ followed_diet: v })} />
           <DietRow title="No cheat meals" sub="Stuck to it all day" checked={log.no_cheat_meal} onChange={(v) => set({ no_cheat_meal: v })} />
           <DietRow title="No alcohol" sub="Zero drinks" checked={log.no_alcohol} onChange={(v) => set({ no_alcohol: v })} />
@@ -441,23 +446,6 @@ export function TodayScreen({ date, setDate, openProgress }: { date: string; set
         }}
       />
 
-      <Sheet open={sheet?.kind === 'restart'} onClose={() => setSheet(null)} title="Restart at day 1?">
-        <p style={{ margin: 0, color: 'var(--muted)', lineHeight: 1.5 }}>
-          This attempt ends here and day 1 starts today. Your history and notes stay saved.
-        </p>
-        <button
-          className="btn btn-danger btn-block"
-          onClick={async () => {
-            await restartChallenge();
-            setSheet(null);
-          }}
-        >
-          Restart today
-        </button>
-        <button className="btn btn-ghost btn-block" onClick={() => setSheet(null)}>
-          Cancel
-        </button>
-      </Sheet>
     </div>
   );
 }

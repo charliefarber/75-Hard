@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { useMemo } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import { useApp } from '../data/AppData';
-import { CHALLENGE_LENGTH, dateForDay, dayNumber, summarise, toISODate } from '../lib/challenge';
+import { CHALLENGE_LENGTH, summarise, toISODate } from '../lib/challenge';
 import { fmt } from '../components/ui';
 import { tap } from '../lib/haptics';
 
@@ -46,27 +46,31 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
         <Tile value={String(summary.completedDays)} label="days complete" dark />
-        <Tile value={String(Math.max(0, CHALLENGE_LENGTH - summary.completedDays))} label="days to go" />
-        <Tile value={`${pct}%`} label="of the way" />
+        <Tile value={String(summary.remaining)} label="days to go" />
+        {summary.missedDays.length > 0 ? (
+          <Tile value={`+${summary.missedDays.length}`} label={summary.missedDays.length === 1 ? 'day added' : 'days added'} />
+        ) : (
+          <Tile value={`${pct}%`} label="of the way" />
+        )}
       </div>
 
       <section className="card">
         <div className="card-head">
           <h2 className="card-title">75 days</h2>
-          <span className="card-sub">Tap a day to open it</span>
+          <span className="card-sub">Finish {format(parseISO(summary.finishDate), 'EEE d MMM')}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, minmax(0, 1fr))', gap: 5 }}>
-          {summary.dayStates.map((state, i) => {
-            const day = i + 1;
-            const date = dateForDay(challenge.start_date, day);
-            const s = CELL[state];
-            const clickable = state !== 'future';
+          {summary.timeline.map((t, i) => {
+            const s = CELL[t.state];
+            const clickable = t.state !== 'future';
+            const when = format(parseISO(t.date), 'EEEE d MMMM');
             return (
               <button
-                key={day}
+                key={t.date}
                 disabled={!clickable}
-                onClick={() => (tap(), openDay(date))}
-                aria-label={`Day ${day}, ${format(parseISO(date), 'd MMMM')}: ${state === 'today' ? 'in progress' : state}`}
+                onClick={() => (tap(), openDay(t.date))}
+                aria-label={t.state === 'missed' ? `${when}: didn’t count` : `Day ${t.day}, ${when}: ${t.state === 'today' ? 'in progress' : t.state}`}
+                title={when}
                 style={{
                   aspectRatio: '1',
                   borderRadius: 8,
@@ -81,7 +85,7 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
                   animation: `pop 0.4s var(--ease) ${Math.min(i, 40) * 8}ms both`,
                 }}
               >
-                {day}
+                {t.day ?? '+1'}
               </button>
             );
           })}
@@ -89,7 +93,7 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
         <div style={{ display: 'flex', gap: 14, fontSize: 12, color: 'var(--muted)', flexWrap: 'wrap' }}>
           <Legend swatch={{ background: 'var(--green)' }} label="Complete" />
           <Legend swatch={{ border: '2px solid var(--green)' }} label="Today" />
-          <Legend swatch={{ background: '#fdf0d8', border: '2px solid #f5dfa8' }} label="Not complete" />
+          <Legend swatch={{ background: '#fdf0d8', border: '2px solid #f5dfa8' }} label="Didn’t count (+1 day)" />
         </div>
       </section>
 
@@ -155,7 +159,6 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
           <span className="section-label">Earlier attempts</span>
           <section className="card list">
             {past.map((c, i) => {
-              const reached = c.ended_on ? Math.max(1, dayNumber(c.start_date, c.ended_on)) : null;
               return (
                 <div className="row" key={c.id}>
                   <div className="row-text">
@@ -166,7 +169,7 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
                     </span>
                   </div>
                   <span className={c.status === 'completed' ? 'chip' : 'chip warn'}>
-                    {c.status === 'completed' ? 'Finished' : reached ? `Reached day ${Math.min(reached, CHALLENGE_LENGTH)}` : 'Reset'}
+                    {c.status === 'completed' ? 'Finished' : 'Restarted'}
                   </span>
                 </div>
               );

@@ -3,7 +3,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { useApp } from '../data/AppData';
 import type { Profile } from '../data/types';
 import { supabaseAnonKey, supabaseUrl } from '../data/repo';
-import { dayNumber, litres } from '../lib/challenge';
+import { litres, summarise } from '../lib/challenge';
 import { Sheet, Toggle, fmt } from '../components/ui';
 import { IconChevron, IconCopy, IconHeart, IconLeaf } from '../components/Icons';
 
@@ -18,13 +18,13 @@ const GOALS: { key: GoalKey; label: string; unit: string; show: (p: Profile) => 
 ];
 
 export function ProfileScreen() {
-  const { repo, user, profile, challenge, today, health, connectHealth, syncHealth, updateProfile, signOut, restartChallenge, history } = useApp();
+  const { repo, user, profile, challenge, logs, today, health, connectHealth, syncHealth, updateProfile, signOut, restartChallenge, history } = useApp();
   const [editing, setEditing] = useState<GoalKey | 'name' | null>(null);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
   if (!profile || !challenge) return null;
 
-  const day = Math.max(1, Math.min(75, dayNumber(challenge.start_date, today)));
+  const day = Math.max(1, summarise(challenge, logs, profile, today).currentDay);
   const attempt = history.findIndex((c) => c.id === challenge.id) + 1 || 1;
   const initial = (profile.display_name || user?.email || '?').charAt(0).toUpperCase();
 

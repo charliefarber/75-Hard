@@ -73,57 +73,100 @@ export function isDayComplete(log: DailyLog | undefined, profile: Parameters<typ
 
 export type DayState = 'complete' | 'missed' | 'today' | 'future';
 
+export interface TimelineDay {
+  date: string;
+  state: DayState;
+  /** Which of the 75 this calendar day is (or will be). Missed days have none: they don't count. */
+  day: number | null;
+}
+
 export interface ChallengeSummary {
-  /** Today's day number, clamped to 1…75 (0 if the attempt starts in the future). */
+  /** The day she's working on today: completed days before today + 1 (0 before the start date). */
   currentDay: number;
-  /** Days fully completed in this attempt. */
+  /** Completed days so far, including today if it's done. */
   completedDays: number;
+  /** Completed days still needed. */
+  remaining: number;
   /** Consecutive complete days ending yesterday (or today, if today is already complete). */
   streak: number;
-  /** Past days in this attempt that weren't fully completed — the rules say restart. */
-  missedDays: { day: number; date: string }[];
-  dayStates: DayState[]; // index 0 = day 1
+  /** Past days that weren't fully completed. Each one adds a day to the end. */
+  missedDays: { date: string }[];
+  /** Every calendar day from the start date to the (projected) 75th completed day. */
+  timeline: TimelineDay[];
+  /** Date of the 75th completed day, actual or projected. */
+  finishDate: string;
+  todayComplete: boolean;
   finished: boolean;
 }
 
+/**
+ * The "extend, don't restart" version of 75 Hard: a day only counts when every
+ * task is done; a missed day just doesn't count, so the finish line moves back
+ * by one. The challenge ends on the 75th completed day.
+ */
 export function summarise(
   challenge: Pick<Challenge, 'start_date'> & Partial<Pick<Challenge, 'credited_days'>>,
   logs: Record<string, DailyLog>,
   profile: Parameters<typeof taskStatuses>[1],
   today: string = todayISO(),
 ): ChallengeSummary {
-  const rawDay = dayNumber(challenge.start_date, today);
-  const currentDay = Math.max(0, Math.min(CHALLENGE_LENGTH, rawDay));
-  const dayStates: DayState[] = [];
-  const missedDays: { day: number; date: string }[] = [];
-  let completedDays = 0;
+  const credited = challenge.credited_days ?? 0;
+  const timeline: TimelineDay[] = [];
+  const missedDays: { date: string }[] = [];
+  let completed = 0;
+  let todayComplete = false;
+  let offset = 0;
 
-  for (let day = 1; day <= CHALLENGE_LENGTH; day++) {
-    const date = dateForDay(challenge.start_date, day);
-    const complete = day <= (challenge.credited_days ?? 0) || isDayComplete(logs[date], profile);
-    if (complete && day <= rawDay) completedDays++;
-    if (day < rawDay) {
-      dayStates.push(complete ? 'complete' : 'missed');
-      if (!complete) missedDays.push({ day, date });
-    } else if (day === rawDay) {
-      dayStates.push(complete ? 'complete' : 'today');
+  // Past and today.
+  for (; completed < CHALLENGE_LENGTH; offset++) {
+    const date = toISODate(addDays(parseISO(challenge.start_date), offset));
+    if (date > today) break;
+    const complete = offset < credited || isDayComplete(logs[date], profile);
+    if (date === today) {
+      todayComplete = complete;
+      if (complete) completed++;
+      timeline.push({ date, state: complete ? 'complete' : 'today', day: complete ? completed : completed + 1 });
+      offset++;
+      break;
+    }
+    if (complete) {
+      completed++;
+      timeline.push({ date, state: 'complete', day: completed });
     } else {
-      dayStates.push('future');
+      missedDays.push({ date });
+      timeline.push({ date, state: 'missed', day: null });
     }
   }
 
-  // Streak: walk back from today (if done) or yesterday.
+  // Projected days ahead, assuming every remaining day is completed.
+  let next = timeline.length && timeline[timeline.length - 1].state === 'today' ? completed + 2 : completed + 1;
+  for (; next <= CHALLENGE_LENGTH; offset++, next++) {
+    const date = toISODate(addDays(parseISO(challenge.start_date), offset));
+    timeline.push({ date, state: 'future', day: next });
+  }
+
+  // Streak: back from today (if done) or yesterday.
   let streak = 0;
-  const startFrom = Math.min(rawDay, CHALLENGE_LENGTH);
-  for (let day = startFrom; day >= 1; day--) {
-    const state = dayStates[day - 1];
-    if (state === 'complete') streak++;
-    else if (day === rawDay && state === 'today') continue;
+  for (let i = timeline.length - 1; i >= 0; i--) {
+    const t = timeline[i];
+    if (t.state === 'future' || t.state === 'today') continue;
+    if (t.state === 'complete') streak++;
     else break;
   }
 
-  const finished = rawDay > CHALLENGE_LENGTH && missedDays.length === 0;
-  return { currentDay, completedDays, streak, missedDays, dayStates, finished };
+  const last75 = timeline.find((t) => t.day === CHALLENGE_LENGTH);
+  const started = challenge.start_date <= today;
+  return {
+    currentDay: started ? Math.min(CHALLENGE_LENGTH, todayComplete ? completed : completed + 1) : 0,
+    completedDays: completed,
+    remaining: CHALLENGE_LENGTH - completed,
+    streak,
+    missedDays,
+    timeline,
+    finishDate: last75?.date ?? today,
+    todayComplete,
+    finished: completed >= CHALLENGE_LENGTH,
+  };
 }
 
 /** Litres for display, e.g. 2.75 (or 3.8 for a goal with digits = 1). */

@@ -66,25 +66,41 @@ describe('tasks', () => {
   });
 });
 
-describe('summary', () => {
-  it('flags missed days and counts the streak', () => {
+describe('summary (missed days extend the challenge)', () => {
+  it('a missed day does not count and pushes the finish line back a day', () => {
     const logs = {
       '2026-10-01': perfect('2026-10-01'),
       '2026-10-02': perfect('2026-10-02'),
-      // 10-03 missing
+      // 10-03 missed
       '2026-10-04': perfect('2026-10-04'),
     };
     const s = summarise({ start_date: '2026-10-01' }, logs, profile, '2026-10-05');
-    expect(s.currentDay).toBe(5);
     expect(s.completedDays).toBe(3);
-    expect(s.missedDays).toEqual([{ day: 3, date: '2026-10-03' }]);
+    expect(s.currentDay).toBe(4); // working on day 4 today, not day 5
+    expect(s.remaining).toBe(72);
+    expect(s.missedDays).toEqual([{ date: '2026-10-03' }]);
     expect(s.streak).toBe(1);
-    expect(s.dayStates.slice(0, 6)).toEqual(['complete', 'complete', 'missed', 'complete', 'today', 'future']);
+    expect(s.timeline.slice(0, 6).map((t) => [t.state, t.day])).toEqual([
+      ['complete', 1], ['complete', 2], ['missed', null], ['complete', 3], ['today', 4], ['future', 5],
+    ]);
+    // 75 counted days + 1 missed = 76 calendar days from 1 Oct.
+    expect(s.finishDate).toBe('2026-12-15');
+    expect(s.timeline.length).toBe(76);
   });
 
-  it('includes today in the streak once it is done', () => {
+  it('with no misses it finishes on calendar day 75', () => {
+    const s = summarise({ start_date: '2026-10-11' }, {}, profile, '2026-10-11');
+    expect(s.currentDay).toBe(1);
+    expect(s.finishDate).toBe('2026-12-24');
+  });
+
+  it('includes today once it is done', () => {
     const logs = { '2026-10-01': perfect('2026-10-01'), '2026-10-02': perfect('2026-10-02') };
-    expect(summarise({ start_date: '2026-10-01' }, logs, profile, '2026-10-02').streak).toBe(2);
+    const s = summarise({ start_date: '2026-10-01' }, logs, profile, '2026-10-02');
+    expect(s.streak).toBe(2);
+    expect(s.currentDay).toBe(2);
+    expect(s.todayComplete).toBe(true);
+    expect(s.finishDate).toBe('2026-12-14');
   });
 
   it('credits days done before using the app', () => {
@@ -92,5 +108,24 @@ describe('summary', () => {
     expect(s.missedDays).toEqual([]);
     expect(s.streak).toBe(9);
     expect(s.completedDays).toBe(9);
+    expect(s.currentDay).toBe(10);
+  });
+
+  it('finishes on the 75th completed day', () => {
+    const logs: Record<string, DailyLog> = {};
+    for (let i = 0; i < 80; i++) {
+      const d = new Date(Date.UTC(2026, 9, 1 + i)).toISOString().slice(0, 10);
+      if (i !== 10) logs[d] = perfect(d);
+    }
+    const s = summarise({ start_date: '2026-10-01' }, logs, profile, '2026-12-31');
+    expect(s.finished).toBe(true);
+    expect(s.completedDays).toBe(75);
+    expect(s.finishDate).toBe('2026-12-15');
+  });
+
+  it('before the start date nothing has happened yet', () => {
+    const s = summarise({ start_date: '2026-10-12' }, {}, profile, '2026-10-11');
+    expect(s.currentDay).toBe(0);
+    expect(s.timeline[0]).toEqual({ date: '2026-10-12', state: 'future', day: 1 });
   });
 });
