@@ -52,6 +52,8 @@ export interface Challenge {
   pet_name?: string;
   /** Missed days a treat was spent on (0002_pet.sql). */
   treat_dates?: string[];
+  /** Which sloth: 'girl' | 'guy' | 'nb' (0003_pet_style.sql). */
+  pet_style?: 'girl' | 'guy' | 'nb';
 }
 
 export interface AuthUser {

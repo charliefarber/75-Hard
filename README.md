@@ -24,12 +24,13 @@ The progress picture is left out on purpose. There's also a notes box for each d
 
 A pet keeps her company through the 75 days (Pet tab, plus a card on Today):
 
-- **Evolves** with completed days: Baby → Sprout (day 7) → Mover (21) → Athlete (40) → Champion (60) → Legend (75). It gains a headband, trainers, a dumbbell, a medal and a crown along the way.
+- **Evolves** with completed days: Baby (days 1–9) → Sprout (10–14) → Mover (15–24) → Athlete (25–34) → Champion (35–49) → Legend (50–75), getting fitter at every stage.
+- **Girl, guy or non-binary** sloth, and any name (Pet → Edit). It's alive: it breathes, sways, glances around, reacts to its mood, and does a happy squish with hearts when tapped.
 - **Gets hungry** when days are missed in a row: hungry, then very hungry, then starving from the third missed day. It never dies. Finishing a day fills it back up.
 - **Treats:** every perfect Monday–Sunday week earns one. A treat feeds the pet for a missed day; it doesn't change the 75.
 - **Unicorn:** a rainbow unicorn flies across the screen whenever a day is completed.
 
-The pet's name and treats are saved on the challenge (`supabase/migrations/0002_pet.sql`).
+The pet's name, style and treats are saved on the challenge (`supabase/migrations/0002_pet.sql` and `0003_pet_style.sql`). The artwork lives in `public/pet/{girl,guy,nb}/` as one transparent WebP per stage and mood (`{stage}-{mood}.webp`, plus `eating.webp`).
 
 ## Lifesum and Apple Health
 
@@ -46,7 +47,7 @@ Both are optional. Everything can be typed in by hand.
 
 ### 1. Supabase
 
-1. In the [SQL editor](https://supabase.com/dashboard/project/vublvpjshnkybdilzcog/sql/new), paste and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), then [`0002_pet.sql`](supabase/migrations/0002_pet.sql). It creates `profiles`, `challenges` and `daily_logs` with row-level security, so each person only sees their own rows. It also creates the `ingest_health` function the Shortcut uses.
+1. In the [SQL editor](https://supabase.com/dashboard/project/vublvpjshnkybdilzcog/sql/new), paste and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), then [`0002_pet.sql`](supabase/migrations/0002_pet.sql) and [`0003_pet_style.sql`](supabase/migrations/0003_pet_style.sql). It creates `profiles`, `challenges` and `daily_logs` with row-level security, so each person only sees their own rows. It also creates the `ingest_health` function the Shortcut uses.
 2. Under **Authentication → URL Configuration**, set the Site URL to wherever the app is hosted, so confirmation emails link back to it.
 3. `.env` already holds the project URL and publishable key. Both are public by design, and row-level security protects the data. Put anything secret in `.env.local`, which git ignores.
 

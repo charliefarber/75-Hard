@@ -8,7 +8,7 @@ import { Ring, Sheet, Toggle, fmt } from '../components/ui';
 import { IconCheck, IconFlame, IconGrid, IconNote, IconRefresh, IconUndo } from '../components/Icons';
 import { success, tap } from '../lib/haptics';
 import { Celebration } from '../components/Celebration';
-import { Sloth } from '../components/Sloth';
+import { PetSprite } from '../components/PetSprite';
 import { MOODS, STAGES, petState, stageFor } from '../lib/pet';
 import { fullnessColor } from './PetScreen';
 
@@ -216,7 +216,7 @@ export function TodayScreen({
           aria-label={`${petName}, ${MOODS[pet.mood].label}. Open pet`}
           style={{ border: 0, flexDirection: 'row', alignItems: 'center', gap: 12, padding: '10px 16px 10px 8px', textAlign: 'left' }}
         >
-          <Sloth stage={pet.stageIndex} mood={pet.mood} size={76} />
+          <PetSprite style={challenge.pet_style ?? 'girl'} stage={pet.stageIndex} mood={pet.mood} size={84} />
           <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
             <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
               <span style={{ fontSize: 16, fontWeight: 800 }}>{petName}</span>

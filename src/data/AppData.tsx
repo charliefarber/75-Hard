@@ -36,7 +36,7 @@ interface AppData {
   regenerateSyncToken(): Promise<void>;
   startChallenge(startDate: string, creditedDays?: number): Promise<void>;
   restartChallenge(): Promise<void>;
-  updateChallenge(patch: Pick<Partial<Challenge>, 'pet_name' | 'treat_dates'>): Promise<void>;
+  updateChallenge(patch: Pick<Partial<Challenge>, 'pet_name' | 'treat_dates' | 'pet_style'>): Promise<void>;
   connectHealth(): Promise<void>;
   syncHealth(): Promise<void>;
   refresh(): Promise<void>;
@@ -300,9 +300,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const now = todayISO();
       await repo.endChallenge(challenge.id, 'reset', now);
       let c = await repo.startChallenge(now);
-      if (challenge.pet_name && challenge.pet_name !== 'Mochi') {
-        await repo.updateChallenge(c.id, { pet_name: challenge.pet_name }).catch(() => {});
-        c = { ...c, pet_name: challenge.pet_name };
+      const keep = { pet_name: challenge.pet_name ?? 'Mochi', pet_style: challenge.pet_style ?? 'girl' };
+      if (keep.pet_name !== 'Mochi' || keep.pet_style !== 'girl') {
+        await repo.updateChallenge(c.id, keep).catch(() => {});
+        c = { ...c, ...keep };
       }
       setHistory((h) => [...h.map((x) => (x.id === challenge.id ? { ...x, status: 'reset' as const, ended_on: now } : x)), c]);
       setChallenge(c);
@@ -312,7 +313,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [repo, challenge, fail]);
 
   const updateChallenge = useCallback(
-    async (patch: Pick<Partial<Challenge>, 'pet_name' | 'treat_dates'>) => {
+    async (patch: Pick<Partial<Challenge>, 'pet_name' | 'treat_dates' | 'pet_style'>) => {
       if (!challenge) return;
       const before = challenge;
       setChallenge({ ...challenge, ...patch });

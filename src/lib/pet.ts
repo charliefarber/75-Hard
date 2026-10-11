@@ -18,12 +18,14 @@ export interface Stage {
 }
 
 export const STAGES: Stage[] = [
-  { min: 0, name: 'Baby', blurb: 'Freshly hatched. Mostly naps.' },
-  { min: 7, name: 'Sprout', blurb: 'Found a headband. Feeling sporty.' },
-  { min: 21, name: 'Mover', blurb: 'New trainers. Actually moving.' },
-  { min: 40, name: 'Athlete', blurb: 'Lifts weights (very slowly).' },
-  { min: 60, name: 'Champion', blurb: 'Medal-worthy dedication.' },
-  { min: 75, name: 'Legend', blurb: 'All 75 days. Unstoppable.' },
+  // Thresholds are completed days, matching the art: Baby days 1–9, Sprout 10–14,
+  // Mover 15–24, Athlete 25–34, Champion 35–49, Legend 50–75.
+  { min: 0, name: 'Baby', blurb: 'Just starting out. Small steps, big dreams.' },
+  { min: 10, name: 'Sprout', blurb: 'Building habits. Finding your rhythm.' },
+  { min: 15, name: 'Mover', blurb: 'Momentum grows. You’re doing it!' },
+  { min: 25, name: 'Athlete', blurb: 'Stronger, fitter, more focused.' },
+  { min: 35, name: 'Champion', blurb: 'Discipline becomes a superpower.' },
+  { min: 50, name: 'Legend', blurb: 'Unstoppable. 75 days and still going strong.' },
 ];
 
 export type Mood = 'ecstatic' | 'happy' | 'hungry' | 'veryHungry' | 'starving';

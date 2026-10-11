@@ -25,7 +25,7 @@ function logsFor(start: string, n: number, skip: number[] = []) {
 
 describe('pet', () => {
   it('evolves with completed days', () => {
-    expect([0, 6, 7, 20, 21, 39, 40, 59, 60, 74, 75].map(stageFor)).toEqual([0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5]);
+    expect([0, 9, 10, 14, 15, 24, 25, 34, 35, 49, 50, 75].map(stageFor)).toEqual([0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
   });
 
   it('is happy when nothing is missed, ecstatic once today is done', () => {
