@@ -20,6 +20,10 @@ export interface Repo {
   getProfile(): Promise<Profile>;
   updateProfile(patch: Partial<Profile>): Promise<Profile>;
   regenerateSyncToken(): Promise<Profile>;
+  /** Everything stored for this account, for "Download my data" (sync token left out). */
+  exportData(): Promise<DataExport>;
+  /** Permanently delete the account and all its data, then sign out. */
+  deleteAccount(): Promise<void>;
 
   getActiveChallenge(): Promise<Challenge | null>;
   listChallenges(): Promise<Challenge[]>;
@@ -32,6 +36,35 @@ export interface Repo {
   saveLog(log: DailyLog, fields?: (keyof DailyLog)[]): Promise<void>;
   /** Save many whole days at once (used when ticking off days done before signing up). */
   saveLogs(logs: DailyLog[]): Promise<void>;
+}
+
+export interface DataExport {
+  exported_at: string;
+  account: { email: string | null };
+  profile: Omit<Profile, 'health_sync_token'>;
+  challenges: Challenge[];
+  daily_logs: DailyLog[];
+}
+
+/** Profile fields the app may change (the database only allows these too; see 0009_security.sql). */
+const PROFILE_EDITABLE = [
+  'display_name',
+  'water_goal_ml',
+  'step_goal',
+  'calorie_goal',
+  'workout_minutes',
+  'reading_goal_pages',
+  'steps_required',
+  'timezone',
+  'birthday',
+  'birthday_pass_year',
+] as const;
+
+const ALL_DATES: [string, string] = ['1900-01-01', '2999-12-31'];
+
+function withoutToken(p: Profile): Omit<Profile, 'health_sync_token'> {
+  const { health_sync_token: _t, ...rest } = p;
+  return rest;
 }
 
 // '*' so the app keeps working whichever optional columns (pet, birthday) exist yet.
@@ -134,19 +167,40 @@ export class SupabaseRepo implements Repo {
   }
 
   async updateProfile(patch: Partial<Profile>) {
-    const { id: _id, health_sync_token: _t, ...rest } = patch;
+    const rest: Record<string, unknown> = {};
+    for (const k of PROFILE_EDITABLE) if (k in patch) rest[k] = patch[k];
     const res = await this.sb.from('profiles').update(rest).eq('id', this.uid()).select(PROFILE_COLUMNS).single();
     return check(res) as Profile;
   }
 
   async regenerateSyncToken() {
-    const res = await this.sb
-      .from('profiles')
-      .update({ health_sync_token: crypto.randomUUID() })
-      .eq('id', this.uid())
-      .select(PROFILE_COLUMNS)
-      .single();
-    return check(res) as Profile;
+    // Generated on the server; the app can't set the token itself.
+    const { error } = await this.sb.rpc('regenerate_sync_token');
+    if (error) throw dbError(error);
+    return this.getProfile();
+  }
+
+  async exportData(): Promise<DataExport> {
+    const [{ data: u }, profile, challenges, logs] = await Promise.all([
+      this.sb.auth.getUser(),
+      this.getProfile(),
+      this.listChallenges(),
+      this.getLogs(...ALL_DATES),
+    ]);
+    return {
+      exported_at: new Date().toISOString(),
+      account: { email: u.user?.email ?? null },
+      profile: withoutToken(profile),
+      challenges,
+      daily_logs: logs.sort((a, b) => a.log_date.localeCompare(b.log_date)),
+    };
+  }
+
+  async deleteAccount() {
+    const { error } = await this.sb.rpc('delete_my_account');
+    if (error) throw dbError(error);
+    // The account is gone on the server, so just clear this device's session.
+    await this.sb.auth.signOut({ scope: 'local' });
   }
 
   async getActiveChallenge() {
@@ -175,7 +229,7 @@ export class SupabaseRepo implements Repo {
     if (error.code === '23505') {
       const existing = await this.getActiveChallenge();
       if (existing) return existing;
-      console.error('[75] active challenge exists but is not readable', { user: this.userId });
+      console.error('[75] active challenge exists but is not readable');
       throw new Error('You already have a challenge running, but it couldn’t be loaded. Try signing out and back in.');
     }
     throw dbError(error);
@@ -317,6 +371,26 @@ export class LocalRepo implements Repo {
 
   async regenerateSyncToken() {
     return this.load().profile;
+  }
+
+  async exportData(): Promise<DataExport> {
+    const s = this.load();
+    return {
+      exported_at: new Date().toISOString(),
+      account: { email: null },
+      profile: withoutToken(s.profile),
+      challenges: s.challenges,
+      daily_logs: Object.values(s.logs).map(normaliseLog).sort((a, b) => a.log_date.localeCompare(b.log_date)),
+    };
+  }
+
+  async deleteAccount() {
+    try {
+      localStorage.removeItem(KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    this.emit(null);
   }
 
   async getActiveChallenge() {

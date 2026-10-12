@@ -34,6 +34,10 @@ interface AppData {
   updateLog(date: string, fn: (log: DailyLog) => DailyLog): void;
   updateProfile(patch: Partial<Profile>): Promise<void>;
   regenerateSyncToken(): Promise<void>;
+  /** Download everything stored for this account as a JSON file. */
+  exportData(): Promise<void>;
+  /** Permanently delete the account and all its data. */
+  deleteAccount(): Promise<void>;
   startChallenge(startDate: string, opts?: { tickOffPast?: boolean }): Promise<void>;
   /** Move the start date (days re-number from the new date). */
   changeStartDate(startDate: string): Promise<void>;
@@ -407,6 +411,46 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     await repo.signOut();
   }, [repo, flushAll]);
 
+  const exportData = useCallback(async () => {
+    try {
+      flushAll();
+      const data = await repo.exportData();
+      const name = `75-hard-data-${todayISO()}.json`;
+      const file = new File([JSON.stringify(data, null, 2)], name, { type: 'application/json' });
+      // On iPhone the share sheet is the natural "save to Files"; elsewhere a normal download.
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: name }).catch(() => {});
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      fail(e);
+    }
+  }, [repo, flushAll, fail]);
+
+  const deleteAccount = useCallback(async () => {
+    // Drop unsaved edits rather than writing them to an account that's about to go.
+    pending.current.forEach((t) => clearTimeout(t));
+    pending.current.clear();
+    dirty.current.clear();
+    await repo.deleteAccount();
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k?.startsWith('seventyfive:')) localStorage.removeItem(k);
+      }
+    } catch {
+      /* storage unavailable */
+    }
+  }, [repo]);
+
   const value: AppData = {
     repo,
     status,
@@ -423,6 +467,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     updateLog,
     updateProfile,
     regenerateSyncToken,
+    exportData,
+    deleteAccount,
     startChallenge,
     restartChallenge,
     changeStartDate,

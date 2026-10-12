@@ -26,11 +26,13 @@ const GOALS: { key: GoalKey; label: string; unit: string; show: (p: Profile) => 
 ];
 
 export function ProfileScreen() {
-  const { repo, user, profile, challenge, logs, today, health, connectHealth, syncHealth, updateProfile, signOut, restartChallenge, history, changeStartDate } = useApp();
+  const { repo, user, profile, challenge, logs, today, health, connectHealth, syncHealth, updateProfile, signOut, restartChallenge, history, changeStartDate, exportData } = useApp();
   const [editing, setEditing] = useState<GoalKey | 'name' | null>(null);
   const [dateEdit, setDateEdit] = useState<null | 'start' | 'birthday'>(null);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   if (!profile || !challenge) return null;
 
   const day = Math.max(1, summarise(challenge, logs, profile, today).currentDay);
@@ -157,6 +159,40 @@ export function ProfileScreen() {
         ))}
       </section>
 
+      <span className="section-label">Your data</span>
+      <section className="card list">
+        <button
+          className="row"
+          style={{ ...ROW_BTN, borderBottomWidth: 1 }}
+          disabled={exporting}
+          onClick={async () => {
+            setExporting(true);
+            await exportData();
+            setExporting(false);
+          }}
+        >
+          <span className="row-text">
+            <span className="row-title" style={{ fontWeight: 600 }}>
+              {exporting ? 'Preparing…' : 'Download my data'}
+            </span>
+            <span className="row-sub">Everything you’ve logged, as a file</span>
+          </span>
+          <IconChevron size={16} style={{ color: '#9aa59d' }} />
+        </button>
+        <button className="row" style={{ ...ROW_BTN, borderBottomWidth: 0 }} onClick={() => setDeleteOpen(true)}>
+          <span className="row-text">
+            <span className="row-title" style={{ fontWeight: 600, color: 'var(--danger)' }}>
+              Delete account
+            </span>
+            <span className="row-sub">Removes your account and everything in it</span>
+          </span>
+          <IconChevron size={16} style={{ color: '#9aa59d' }} />
+        </button>
+      </section>
+      <p className="card-sub" style={{ margin: '-4px 4px 0', lineHeight: 1.5 }}>
+        Only you can see what you log here. Nobody else, including other people using the app, can read it.
+      </p>
+
       {user?.email && <p className="card-sub" style={{ margin: '4px 4px 0' }}>Signed in as {user.email}</p>}
       <div style={{ display: 'flex', gap: 10 }}>
         <button className="btn btn-soft" style={{ flex: 1, height: 48 }} onClick={() => signOut()}>
@@ -204,6 +240,8 @@ export function ProfileScreen() {
 
       <ShortcutSheet open={shortcutOpen} onClose={() => setShortcutOpen(false)} token={profile.health_sync_token} />
 
+      <DeleteAccountSheet open={deleteOpen} onClose={() => setDeleteOpen(false)} />
+
       <Sheet open={restartOpen} onClose={() => setRestartOpen(false)} title="Restart at day 1?">
         <p style={{ margin: 0, color: 'var(--muted)', lineHeight: 1.5 }}>
           This attempt ends here and day 1 starts today. Your history and notes stay saved.
@@ -222,6 +260,66 @@ export function ProfileScreen() {
         </button>
       </Sheet>
     </div>
+  );
+}
+
+function DeleteAccountSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { deleteAccount, repo } = useApp();
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (open) {
+      setTyped('');
+      setErr(null);
+      setBusy(false);
+    }
+  }, [open]);
+  const ready = typed.trim().toUpperCase() === 'DELETE';
+  return (
+    <Sheet open={open} onClose={() => !busy && onClose()} title="Delete your account?">
+      <p style={{ margin: 0, color: 'var(--muted)', lineHeight: 1.5 }}>
+        This permanently deletes your account, every day you’ve logged, your notes, your challenges and your sloth
+        {repo.kind === 'local' ? ' from this device' : ''}. It can’t be undone. If you want a copy, use <strong>Download my data</strong> first.
+      </p>
+      <label className="field">
+        Type DELETE to confirm
+        <input
+          className="input"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          autoCapitalize="characters"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          placeholder="DELETE"
+        />
+      </label>
+      {err && (
+        <span className="card-sub" style={{ color: 'var(--danger)', fontWeight: 600 }}>
+          {err}
+        </span>
+      )}
+      <button
+        className="btn btn-danger btn-block"
+        disabled={!ready || busy}
+        onClick={async () => {
+          setBusy(true);
+          setErr(null);
+          try {
+            await deleteAccount();
+          } catch (e) {
+            setErr(e instanceof Error ? e.message : 'Something went wrong. Nothing was deleted.');
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? 'Deleting…' : 'Delete everything'}
+      </button>
+      <button className="btn btn-ghost btn-block" disabled={busy} onClick={onClose}>
+        Cancel
+      </button>
+    </Sheet>
   );
 }
 
