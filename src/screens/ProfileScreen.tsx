@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow, parseISO } from 'date-fns';
 import { useApp } from '../data/AppData';
 import type { Profile } from '../data/types';
 import { supabaseAnonKey, supabaseUrl } from '../data/repo';
@@ -26,8 +26,9 @@ const GOALS: { key: GoalKey; label: string; unit: string; show: (p: Profile) => 
 ];
 
 export function ProfileScreen() {
-  const { repo, user, profile, challenge, logs, today, health, connectHealth, syncHealth, updateProfile, signOut, restartChallenge, history } = useApp();
+  const { repo, user, profile, challenge, logs, today, health, connectHealth, syncHealth, updateProfile, signOut, restartChallenge, history, changeStartDate } = useApp();
   const [editing, setEditing] = useState<GoalKey | 'name' | null>(null);
+  const [dateEdit, setDateEdit] = useState<null | 'start' | 'birthday'>(null);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
   if (!profile || !challenge) return null;
@@ -119,10 +120,30 @@ export function ProfileScreen() {
         </p>
       )}
 
+      <span className="section-label">Your challenge</span>
+      <section className="card list">
+        {[
+          { id: 'start' as const, label: 'Start date', value: format(parseISO(challenge.start_date), 'EEE d MMM yyyy') },
+          { id: 'birthday' as const, label: 'Birthday', value: profile.birthday ? format(parseISO(profile.birthday), 'd MMMM') : 'Add' },
+        ].map((r, i) => (
+          <button key={r.id} className="row" style={{ ...ROW_BTN, borderBottomWidth: i === 0 ? 1 : 0 }} onClick={() => setDateEdit(r.id)}>
+            <span className="row-text">
+              <span className="row-title" style={{ fontWeight: 600 }}>
+                {r.label}
+              </span>
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: 'var(--green-ink)' }}>
+              {r.value}
+              <IconChevron size={16} style={{ color: '#9aa59d' }} />
+            </span>
+          </button>
+        ))}
+      </section>
+
       <span className="section-label">Daily goals</span>
       <section className="card list">
-        {GOALS.map((g) => (
-          <button key={g.key} className="row" style={{ width: '100%', background: 'none', border: 0, borderBottom: '1px solid var(--line)', textAlign: 'left' }} onClick={() => setEditing(g.key)}>
+        {GOALS.map((g, i) => (
+          <button key={g.key} className="row" style={{ ...ROW_BTN, borderBottomWidth: i === GOALS.length - 1 ? 0 : 1 }} onClick={() => setEditing(g.key)}>
             <span className="row-text">
               <span className="row-title" style={{ fontWeight: 600 }}>
                 {g.label}
@@ -142,9 +163,34 @@ export function ProfileScreen() {
           Sign out
         </button>
         <button className="btn btn-danger" style={{ flex: 1, height: 48 }} onClick={() => setRestartOpen(true)}>
-          Restart at day 1
+          Start over
         </button>
       </div>
+
+      <DateSheet
+        open={dateEdit === 'start'}
+        title="Start date"
+        initial={challenge.start_date}
+        max={today}
+        note="Day 1 moves to this date and every day re-numbers from it. Your logged days stay as they are."
+        onClose={() => setDateEdit(null)}
+        onSave={(d) => {
+          changeStartDate(d);
+          setDateEdit(null);
+        }}
+      />
+      <DateSheet
+        open={dateEdit === 'birthday'}
+        title="Your birthday"
+        initial={profile.birthday ?? ''}
+        max={today}
+        note="A week before your birthday you get a birthday pass: pick any day and it counts as complete."
+        onClose={() => setDateEdit(null)}
+        onSave={(d) => {
+          updateProfile({ birthday: d });
+          setDateEdit(null);
+        }}
+      />
 
       <GoalSheet
         field={editing}
@@ -176,6 +222,57 @@ export function ProfileScreen() {
         </button>
       </Sheet>
     </div>
+  );
+}
+
+const ROW_BTN = {
+  width: '100%',
+  background: 'none',
+  borderWidth: '0 0 1px',
+  borderStyle: 'solid',
+  borderColor: 'var(--line)',
+  textAlign: 'left' as const,
+};
+
+function DateSheet({
+  open,
+  title,
+  initial,
+  max,
+  note,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  title: string;
+  initial: string;
+  max: string;
+  note: string;
+  onClose: () => void;
+  onSave: (date: string) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  useEffect(() => {
+    if (open) setValue(initial);
+  }, [open, initial]);
+  return (
+    <Sheet open={open} onClose={onClose} title={title}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (value && value <= max) onSave(value);
+        }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
+      >
+        <input className="input" type="date" aria-label={title} value={value} max={max} onChange={(e) => setValue(e.target.value)} />
+        <p className="card-sub" style={{ margin: 0, lineHeight: 1.5 }}>
+          {note}
+        </p>
+        <button className="btn btn-primary btn-block" type="submit" disabled={!value || value > max}>
+          Save
+        </button>
+      </form>
+    </Sheet>
   );
 }
 

@@ -8,6 +8,8 @@ import { Ring, Sheet, Toggle, fmt } from '../components/ui';
 import { IconCheck, IconFlame, IconGrid, IconNote, IconRefresh, IconUndo } from '../components/Icons';
 import { success, tap } from '../lib/haptics';
 import { Celebration } from '../components/Celebration';
+import { BirthdayCake } from '../components/BirthdayCake';
+import { birthdayPass } from '../lib/birthday';
 import { PetSprite } from '../components/PetSprite';
 import { MOODS, STAGES, petState, stageFor } from '../lib/pet';
 import { fullnessColor } from './PetScreen';
@@ -25,7 +27,8 @@ export function TodayScreen({
   openProgress: () => void;
   openPet: () => void;
 }) {
-  const { profile, challenge, logs, logFor, updateLog, today, health, syncHealth } = useApp();
+  const { profile, challenge, logs, logFor, updateLog, today, health, syncHealth, applyBirthdayPass, undoBirthdayPass } = useApp();
+  const [bdayIntro, setBdayIntro] = useState(false);
   const [sheet, setSheet] = useState<null | { kind: 'workout'; index: number } | { kind: 'steps' } | { kind: 'calories' }>(null);
 
   const log = logFor(date);
@@ -36,7 +39,8 @@ export function TodayScreen({
   );
 
   const doneCount = tasks.filter((t) => t.done).length;
-  const allDone = tasks.length > 0 && doneCount === tasks.length;
+  const passDay = !!log.birthday_pass;
+  const allDone = passDay || (tasks.length > 0 && doneCount === tasks.length);
 
   // Celebrate once when the day being viewed flips to complete (not when switching days).
   const [party, setParty] = useState<null | { title: string; subtitle: string }>(null);
@@ -51,9 +55,29 @@ export function TodayScreen({
     const evolved = n === STAGES.find((st) => st.min === n && st.min > 0)?.min;
     setParty({
       title: `Day ${n} done!`,
-      subtitle: evolved ? `${petName} evolved into ${STAGES[stageFor(n)].name}!` : `${petName} is fed and happy.`,
+      subtitle: evolved
+        ? `${petName} evolved into ${STAGES[stageFor(n)].name}!`
+        : passDay
+          ? `Birthday pass used. ${petName} got cake!`
+          : `${petName} is fed and happy.`,
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allDone, date, summary, challenge]);
+
+  // Birthday pass: a week before her birthday, show the surprise once per year.
+  const pass = profile ? birthdayPass(profile.birthday, profile.birthday_pass_year, today) : null;
+  useEffect(() => {
+    if (!pass?.available) return;
+    const key = `seventyfive:bday-intro-${pass.year}`;
+    try {
+      if (!localStorage.getItem(key)) {
+        localStorage.setItem(key, '1');
+        setBdayIntro(true);
+      }
+    } catch {
+      /* storage unavailable */
+    }
+  }, [pass?.available, pass?.year]);
   const endParty = useCallback(() => setParty(null), []);
 
   if (!profile || !challenge || !summary) return null;
@@ -148,8 +172,8 @@ export function TodayScreen({
           <Ring
             size={132}
             stroke={12}
-            value={credited ? 1 : doneCount}
-            max={credited ? 1 : tasks.length}
+            value={credited || passDay ? 1 : doneCount}
+            max={credited || passDay ? 1 : tasks.length}
             color="var(--mint)"
             track="rgba(255,255,255,0.14)"
             label={`${doneCount} of ${tasks.length} tasks done`}
@@ -232,6 +256,65 @@ export function TodayScreen({
             </span>
           </span>
         </button>
+
+        {passDay && (
+          <section className="card bday-card" style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <BirthdayCake size={52} />
+            <div className="row-text">
+              <span className="row-title">Birthday pass used</span>
+              <span className="row-sub">This day counts as complete.</span>
+            </div>
+            <button className="link-btn" onClick={() => undoBirthdayPass(date)}>
+              Undo
+            </button>
+          </section>
+        )}
+
+        {pass?.available && !passDay && (
+          <section className="card bday-card" style={{ gap: 12 }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <BirthdayCake size={56} />
+              <div className="row-text">
+                <span className="row-title">
+                  {pass.isBirthday
+                    ? `Happy birthday${profile.display_name ? `, ${profile.display_name}` : ''}!`
+                    : pass.daysUntil > 0
+                      ? `Happy early birthday${profile.display_name ? `, ${profile.display_name}` : ''}!`
+                      : 'Your birthday pass is waiting'}
+                </span>
+                <span className="row-sub">One free day: pick any day and it counts as complete, and {challenge.pet_name || 'Mochi'} gets cake.</span>
+              </div>
+            </div>
+            {calendarIndex >= 1 && !allDone ? (
+              <button className="btn btn-primary" style={{ height: 46 }} onClick={() => applyBirthdayPass(date, pass.year)}>
+                Use it on {isToday ? 'today' : format(parseISO(date), 'EEE d MMM')}
+              </button>
+            ) : (
+              <span className="card-sub">Open the day you want to use it on, then tap “Use it”.</span>
+            )}
+          </section>
+        )}
+
+        {!isToday && calendarIndex >= 1 && !allDone && (
+          <button
+            className="btn btn-soft"
+            style={{ height: 46 }}
+            onClick={() => {
+              tap();
+              updateLog(date, (l) => ({
+                ...l,
+                workouts: l.workouts.map((w) => ({ ...w, done: true, minutes: Math.max(w.minutes, profile.workout_minutes) })),
+                water_ml: Math.max(l.water_ml, profile.water_goal_ml),
+                pages_read: Math.max(l.pages_read, profile.reading_goal_pages),
+                followed_diet: true,
+                no_cheat_meal: true,
+                no_alcohol: true,
+              }));
+            }}
+          >
+            <IconCheck size={18} strokeWidth={2.6} /> Tick everything off for {format(parseISO(date), 'EEE d MMM')}
+          </button>
+        )}
 
         {lastMissed && (
           <section className="card" style={{ background: '#fff8e8', border: '1.5px solid #f5dfa8' }}>
@@ -489,6 +572,20 @@ export function TodayScreen({
         }}
       />
 
+      <Sheet open={bdayIntro} onClose={() => setBdayIntro(false)} title={pass?.isBirthday ? 'Happy birthday!' : 'Your birthday is coming!'}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0' }}>
+          <BirthdayCake size={120} />
+        </div>
+        <p style={{ margin: 0, lineHeight: 1.55, color: 'var(--ink-2)' }}>
+          Here’s a free <strong>birthday pass</strong>. Use it on any day you like, your birthday or any other, and that day counts as complete. {challenge.pet_name || 'Mochi'} gets birthday cake too.
+        </p>
+        <p className="card-sub" style={{ margin: 0 }}>
+          Open the day you want, then tap “Use it” on the birthday card.
+        </p>
+        <button className="btn btn-primary btn-block" onClick={() => setBdayIntro(false)}>
+          Yay, got it
+        </button>
+      </Sheet>
       {party && <Celebration title={party.title} subtitle={party.subtitle} onDone={endParty} />}
     </div>
   );

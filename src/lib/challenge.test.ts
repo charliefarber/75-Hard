@@ -133,3 +133,9 @@ describe('summary (missed days extend the challenge)', () => {
     expect(s.timeline[0]).toEqual({ date: '2026-10-12', state: 'future', day: 1 });
   });
 });
+
+describe('birthday pass on a day', () => {
+  it('makes an otherwise empty day count', () => {
+    expect(isDayComplete({ ...emptyLog('2026-10-19'), birthday_pass: true }, profile)).toBe(true);
+  });
+});

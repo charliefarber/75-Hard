@@ -23,6 +23,8 @@ export interface DailyLog {
   calories: number | null;
   calories_source: Source | null;
   notes: string;
+  /** The yearly birthday pass was spent on this day: it counts as complete (0004_birthday.sql). */
+  birthday_pass?: boolean;
 }
 
 export interface Profile {
@@ -34,6 +36,10 @@ export interface Profile {
   workout_minutes: number;
   reading_goal_pages: number;
   steps_required: boolean;
+  /** yyyy-MM-dd (0004_birthday.sql). */
+  birthday?: string | null;
+  /** The birthday year whose pass has been used (0004_birthday.sql). */
+  birthday_pass_year?: number | null;
   timezone: string;
   health_sync_token: string;
 }
@@ -82,9 +88,11 @@ export const emptyLog = (date: string): DailyLog => ({
 export function normaliseLog(raw: Partial<DailyLog> & { log_date: string }): DailyLog {
   const base = emptyLog(raw.log_date);
   const workouts = Array.isArray(raw.workouts) ? raw.workouts : [];
+  const { user_id: _u, updated_at: _t, ...rest } = raw as typeof raw & { user_id?: string; updated_at?: string };
   return {
     ...base,
-    ...raw,
+    ...rest,
+    notes: rest.notes ?? '',
     workouts: [0, 1].map((i) => ({ ...emptyWorkout(), ...(workouts[i] ?? {}) })),
   };
 }

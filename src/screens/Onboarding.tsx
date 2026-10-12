@@ -1,38 +1,40 @@
 import { useRef, useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import { useApp } from '../data/AppData';
-import { CHALLENGE_LENGTH, finishDate, toISODate, todayISO } from '../lib/challenge';
-import { Stepper, Toggle } from '../components/ui';
+import { dayNumber, finishDate, toISODate, todayISO } from '../lib/challenge';
+import { Toggle } from '../components/ui';
 import { WATER_PRESETS } from './ProfileScreen';
 
-type Start = 'today' | 'tomorrow' | 'already';
+type Start = 'today' | 'tomorrow' | 'earlier';
 
 export function Onboarding() {
   const { profile, startChallenge, updateProfile, history } = useApp();
+  const today = todayISO();
+  const yesterday = toISODate(addDays(parseISO(today), -1));
+
   const [start, setStart] = useState<Start>('today');
-  const [currentDay, setCurrentDay] = useState(2);
-  const [credit, setCredit] = useState(true);
+  const [earlier, setEarlier] = useState(toISODate(addDays(parseISO(today), -7)));
+  const [tickOff, setTickOff] = useState(true);
   const [water, setWater] = useState(profile?.water_goal_ml ?? 3785);
+  const [waterText, setWaterText] = useState(String((profile?.water_goal_ml ?? 3785) / 1000));
   const [calories, setCalories] = useState(profile?.calorie_goal?.toString() ?? '');
   const [weeklySteps, setWeeklySteps] = useState(String((profile?.step_goal ?? 10000) * 7));
-  const [waterText, setWaterText] = useState(String((profile?.water_goal_ml ?? 3785) / 1000));
+  const [birthday, setBirthday] = useState(profile?.birthday ?? '');
   const [busy, setBusy] = useState(false);
+  const [tried, setTried] = useState(false);
 
-  const today = todayISO();
-  const startDate =
-    start === 'today'
-      ? today
-      : start === 'tomorrow'
-        ? toISODate(addDays(parseISO(today), 1))
-        : toISODate(addDays(parseISO(today), -(currentDay - 1)));
-
+  const startDate = start === 'today' ? today : start === 'tomorrow' ? toISODate(addDays(parseISO(today), 1)) : earlier;
+  const earlierOk = start !== 'earlier' || (!!earlier && earlier <= yesterday);
+  const dayToday = dayNumber(startDate, today);
   const restarted = history.some((c) => c.status === 'reset');
   const name = profile?.display_name;
+  const missingBirthday = !birthday;
 
   const submitting = useRef(false);
 
   async function go() {
-    if (submitting.current) return; // ignore a double tap
+    setTried(true);
+    if (missingBirthday || !earlierOk || submitting.current) return;
     submitting.current = true;
     setBusy(true);
     try {
@@ -41,8 +43,9 @@ export function Onboarding() {
         water_goal_ml: water,
         calorie_goal: Number.isFinite(cal) && cal > 0 ? cal : null,
         step_goal: Math.max(1, Math.round((parseInt(weeklySteps, 10) || 70000) / 7)),
+        birthday,
       });
-      await startChallenge(startDate, start === 'already' && credit ? currentDay - 1 : 0);
+      await startChallenge(startDate, { tickOffPast: start === 'earlier' && tickOff });
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -60,7 +63,7 @@ export function Onboarding() {
         </div>
 
         <section className="card">
-          <h2 className="card-title">When does day 1 start?</h2>
+          <h2 className="card-title">When did day 1 start?</h2>
           <div className="segmented">
             <button aria-pressed={start === 'today'} onClick={() => setStart('today')}>
               Today
@@ -68,31 +71,70 @@ export function Onboarding() {
             <button aria-pressed={start === 'tomorrow'} onClick={() => setStart('tomorrow')}>
               Tomorrow
             </button>
-            <button aria-pressed={start === 'already'} onClick={() => setStart('already')}>
-              Underway
+            <button aria-pressed={start === 'earlier'} onClick={() => setStart('earlier')}>
+              Earlier
             </button>
           </div>
-          {start === 'already' && (
+          {start === 'earlier' && (
             <>
-              <div className="row" style={{ borderBottom: 0, paddingBottom: 0 }}>
+              <label className="field">
+                Start date
+                <input
+                  className="input"
+                  type="date"
+                  value={earlier}
+                  max={yesterday}
+                  min={toISODate(addDays(parseISO(today), -365))}
+                  onChange={(e) => setEarlier(e.target.value)}
+                />
+              </label>
+              {earlierOk ? (
+                <span className="card-sub">
+                  That makes today <strong style={{ color: 'var(--ink)' }}>day {dayToday}</strong>.
+                </span>
+              ) : (
+                <span className="card-sub" style={{ color: 'var(--danger)', fontWeight: 600 }}>
+                  Pick a date before today.
+                </span>
+              )}
+              <div className="row" style={{ borderBottom: 0, padding: 0 }}>
                 <div className="row-text">
-                  <span className="row-title">Today is day</span>
-                  <span className="row-sub">Started {format(parseISO(startDate), 'EEE d MMM')}</span>
+                  <span className="row-title">Tick off the days so far</span>
+                  <span className="row-sub">Marks {format(parseISO(earlierOk ? earlier : yesterday), 'd MMM')} to yesterday as complete. Change any of them in the calendar.</span>
                 </div>
-                <Stepper value={currentDay} onChange={setCurrentDay} min={2} max={CHALLENGE_LENGTH} label="current day" />
-              </div>
-              <div className="row" style={{ borderBottom: 0, paddingTop: 4 }}>
-                <div className="row-text">
-                  <span className="row-title">{currentDay === 2 ? 'Count day 1 as done' : `Count days 1–${currentDay - 1} as done`}</span>
-                  <span className="row-sub">You tracked these somewhere else</span>
-                </div>
-                <Toggle checked={credit} onChange={setCredit} label="Count earlier days as done" />
+                <Toggle checked={tickOff} onChange={setTickOff} label="Tick off the days so far" />
               </div>
             </>
           )}
           <p className="card-sub" style={{ margin: 0 }}>
             Finish line: <strong style={{ color: 'var(--ink)' }}>{format(parseISO(finishDate(startDate)), 'EEEE d MMMM')}</strong>
+            {start === 'earlier' && !tickOff ? ' (later if any past days don’t count)' : ''}
           </p>
+        </section>
+
+        <section className="card">
+          <label className="field">
+            <span className="card-title" style={{ color: 'var(--ink)' }}>
+              Your birthday
+            </span>
+            <span className="card-sub" style={{ fontWeight: 500 }}>
+              There’s a little something for you when it comes round.
+            </span>
+            <input
+              className="input"
+              type="date"
+              value={birthday}
+              max={today}
+              onChange={(e) => setBirthday(e.target.value)}
+              aria-invalid={tried && missingBirthday}
+              style={tried && missingBirthday ? { borderColor: 'var(--danger)' } : undefined}
+            />
+          </label>
+          {tried && missingBirthday && (
+            <span className="card-sub" style={{ color: 'var(--danger)', fontWeight: 600 }}>
+              Add your birthday to continue.
+            </span>
+          )}
         </section>
 
         <section className="card">
@@ -167,7 +209,7 @@ export function Onboarding() {
         </section>
 
         <button className="btn btn-primary btn-block" style={{ height: 56, borderRadius: 18 }} onClick={go} disabled={busy}>
-          {start === 'already' ? `Pick up at day ${currentDay}` : 'Start day 1'}
+          {busy ? 'Setting up…' : start === 'earlier' ? `Pick up at day ${earlierOk ? dayToday : '…'}` : start === 'tomorrow' ? 'Start tomorrow' : 'Start day 1'}
         </button>
       </div>
     </div>

@@ -77,6 +77,9 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
           <h2 className="card-title">Calendar</h2>
           <span className="card-sub">Finish {format(parseISO(summary.finishDate), 'EEE d MMM')}</span>
         </div>
+        <div className="card-sub" style={{ marginTop: -6 }}>
+          Tap any day to fill it in or change it.
+        </div>
         {months.map((m) => (
           <div key={m.key} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <span style={{ fontSize: 14, fontWeight: 800 }}>{m.title}</span>

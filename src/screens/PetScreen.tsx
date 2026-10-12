@@ -5,6 +5,8 @@ import { summarise } from '../lib/challenge';
 import { MOODS, STAGES, petState } from '../lib/pet';
 import { PET_STYLES, PetSprite, type PetStyle } from '../components/PetSprite';
 import { Sheet } from '../components/ui';
+import { BirthdayCake } from '../components/BirthdayCake';
+import { birthdayPass } from '../lib/birthday';
 import { success, tap } from '../lib/haptics';
 
 export function fullnessColor(f: number) {
@@ -50,6 +52,7 @@ export function PetScreen() {
   const mood = MOODS[pet.mood];
   const canTreat = pet.treatsAvailable > 0 && pet.missedRun > 0 && !!pet.treatTarget;
   const scene = pet.stageIndex >= 4 ? 'sunset' : 'forest';
+  const bday = birthdayPass(profile.birthday, profile.birthday_pass_year, today);
 
   function openEditor() {
     setName(challenge?.pet_name || 'Mochi');
@@ -126,6 +129,17 @@ export function PetScreen() {
             <span className="row-sub">One for every perfect Monday-to-Sunday week</span>
           </div>
         </div>
+        {bday?.available && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <span className="icon-badge bday-card" style={{ border: 0 }}>
+              <BirthdayCake size={30} />
+            </span>
+            <div className="row-text">
+              <span className="row-title">1 birthday pass</span>
+              <span className="row-sub">Makes any day count as complete. Use it from Today.</span>
+            </div>
+          </div>
+        )}
         <button className="btn btn-primary btn-block" disabled={!canTreat} onClick={giveTreat}>
           Give {petName} a treat
         </button>
@@ -223,10 +237,8 @@ export function PetScreen() {
                   }}
                 >
                   <PetSprite style={s.id} stage={Math.max(1, pet.stageIndex)} mood="happy" size={86} still={!on} />
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 800, fontSize: 13, whiteSpace: 'nowrap' }}>
-                    <GenderMark id={s.id} />
-                    {s.label}
-                  </span>
+                  <GenderMark id={s.id} />
+                  <span style={{ fontWeight: 800, fontSize: 13, lineHeight: 1.15, textAlign: 'center' }}>{s.label}</span>
                 </button>
               );
             })}
@@ -245,7 +257,7 @@ export function PetScreen() {
 }
 
 function GenderMark({ id }: { id: PetStyle }) {
-  const p = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.4, strokeLinecap: 'round' as const, 'aria-hidden': true };
+  const p = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.4, strokeLinecap: 'round' as const, 'aria-hidden': true };
   if (id === 'girl')
     return (
       <svg {...p} style={{ color: '#D9467A' }}>

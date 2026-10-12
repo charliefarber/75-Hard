@@ -64,6 +64,7 @@ export function weekSteps(logs: Record<string, DailyLog>, date: string): { total
 }
 
 export function isDayComplete(log: DailyLog | undefined, profile: Parameters<typeof taskStatuses>[1]): boolean {
+  if (log?.birthday_pass) return true;
   return taskStatuses(log, profile).every((t) => t.done);
 }
 

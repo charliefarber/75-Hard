@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { addDays, parseISO } from 'date-fns';
-import { createRepo, type Repo } from './repo';
+import { createRepo, type ChallengePatch, type Repo } from './repo';
 import type { AuthUser, Challenge, DailyLog, Profile } from './types';
 import { emptyLog } from './types';
 import { toISODate, todayISO } from '../lib/challenge';
@@ -34,9 +34,13 @@ interface AppData {
   updateLog(date: string, fn: (log: DailyLog) => DailyLog): void;
   updateProfile(patch: Partial<Profile>): Promise<void>;
   regenerateSyncToken(): Promise<void>;
-  startChallenge(startDate: string, creditedDays?: number): Promise<void>;
+  startChallenge(startDate: string, opts?: { tickOffPast?: boolean }): Promise<void>;
+  /** Move the start date (days re-number from the new date). */
+  changeStartDate(startDate: string): Promise<void>;
+  applyBirthdayPass(date: string, year: number): Promise<void>;
+  undoBirthdayPass(date: string): Promise<void>;
   restartChallenge(): Promise<void>;
-  updateChallenge(patch: Pick<Partial<Challenge>, 'pet_name' | 'treat_dates' | 'pet_style'>): Promise<void>;
+  updateChallenge(patch: ChallengePatch): Promise<void>;
   connectHealth(): Promise<void>;
   syncHealth(): Promise<void>;
   refresh(): Promise<void>;
@@ -44,6 +48,22 @@ interface AppData {
 }
 
 const Ctx = createContext<AppData | null>(null);
+
+/** A day with every task ticked off, used for days done before signing up. */
+function completeLog(date: string, p: Profile): DailyLog {
+  return {
+    ...emptyLog(date),
+    workouts: [
+      { done: true, minutes: p.workout_minutes, type: '', outdoor: false, source: 'manual' },
+      { done: true, minutes: p.workout_minutes, type: '', outdoor: false, source: 'manual' },
+    ],
+    water_ml: p.water_goal_ml,
+    pages_read: p.reading_goal_pages,
+    followed_diet: true,
+    no_cheat_meal: true,
+    no_alcohol: true,
+  };
+}
 
 export function useApp(): AppData {
   const v = useContext(Ctx);
@@ -280,9 +300,22 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [repo, fail]);
 
   const startChallenge = useCallback(
-    async (startDate: string, creditedDays = 0) => {
+    async (startDate: string, opts: { tickOffPast?: boolean } = {}) => {
       try {
-        const c = await repo.startChallenge(startDate, creditedDays);
+        const c = await repo.startChallenge(startDate, 0);
+        const p = profileRef.current;
+        if (opts.tickOffPast && p) {
+          // Days already done before signing up: tick every task off (each day can still be edited).
+          const now = todayISO();
+          const filled: DailyLog[] = [];
+          for (let d = startDate; d < now; d = toISODate(addDays(parseISO(d), 1))) {
+            const existing = logsRef.current[d];
+            if (existing && Object.keys(existing).length && existing.water_ml > 0) continue;
+            filled.push(completeLog(d, p));
+          }
+          await repo.saveLogs(filled);
+          setLogs((prev) => ({ ...prev, ...Object.fromEntries(filled.map((l) => [l.log_date, l])) }));
+        }
         setChallenge(c);
         setHistory((h) => (h.some((x) => x.id === c.id) ? h : [...h, c]));
         setStatus('ready');
@@ -292,6 +325,48 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       }
     },
     [repo, loadLogs, fail],
+  );
+
+  const changeStartDate = useCallback(
+    async (startDate: string) => {
+      if (!challenge) return;
+      const before = challenge;
+      setChallenge({ ...challenge, start_date: startDate, credited_days: 0 });
+      try {
+        await repo.updateChallenge(challenge.id, { start_date: startDate, credited_days: 0 });
+        await loadLogs({ ...challenge, start_date: startDate });
+      } catch (e) {
+        setChallenge(before);
+        fail(e);
+      }
+    },
+    [repo, challenge, loadLogs, fail],
+  );
+
+  const applyBirthdayPass = useCallback(
+    async (date: string, year: number) => {
+      updateLog(date, (l) => ({ ...l, birthday_pass: true }));
+      setProfile((p) => (p ? { ...p, birthday_pass_year: year } : p));
+      try {
+        setProfile(await repo.updateProfile({ birthday_pass_year: year }));
+      } catch (e) {
+        fail(e);
+      }
+    },
+    [repo, updateLog, fail],
+  );
+
+  const undoBirthdayPass = useCallback(
+    async (date: string) => {
+      updateLog(date, (l) => ({ ...l, birthday_pass: false }));
+      setProfile((p) => (p ? { ...p, birthday_pass_year: null } : p));
+      try {
+        setProfile(await repo.updateProfile({ birthday_pass_year: null }));
+      } catch (e) {
+        fail(e);
+      }
+    },
+    [repo, updateLog, fail],
   );
 
   const restartChallenge = useCallback(async () => {
@@ -313,7 +388,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [repo, challenge, fail]);
 
   const updateChallenge = useCallback(
-    async (patch: Pick<Partial<Challenge>, 'pet_name' | 'treat_dates' | 'pet_style'>) => {
+    async (patch: ChallengePatch) => {
       if (!challenge) return;
       const before = challenge;
       setChallenge({ ...challenge, ...patch });
@@ -350,6 +425,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     regenerateSyncToken,
     startChallenge,
     restartChallenge,
+    changeStartDate,
+    applyBirthdayPass,
+    undoBirthdayPass,
     updateChallenge,
     connectHealth,
     syncHealth,

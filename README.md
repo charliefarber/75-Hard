@@ -18,7 +18,11 @@ A simple, good-looking daily tracker for the 75 Hard challenge. It's styled afte
 
 The progress picture is left out on purpose. There's also a notes box for each day.
 
-**Missed days extend the challenge rather than restarting it.** A day only counts when every task is ticked off. A missed day just doesn't count: it shows as **+1** on the Progress grid, and the finish line moves back a day. The challenge ends on the 75th completed day. If a day was done but not logged, fill it in and it counts again. A manual **Restart at day 1** is still in Profile. If she's already partway through when she signs up, choose **Underway** and the earlier days count as done.
+**Missed days extend the challenge rather than restarting it.** A day only counts when every task is ticked off. A missed day just doesn't count: it shows as **+1** on the Progress grid, and the finish line moves back a day. The challenge ends on the 75th completed day. If a day was done but not logged, fill it in and it counts again. A manual **Restart at day 1** is still in Profile. Already partway through when signing up? Choose **Earlier**, pick the real start date, and optionally tick off every day so far. Any past day can be opened from the Progress calendar and filled in or changed (there's a one-tap "Tick everything off" for past days). The start date can be changed later in Profile.
+
+## Birthday pass
+
+Everyone adds their birthday at sign-up (or in Profile). From a week before it until a month after, a **birthday pass** appears on Today: use it on any day and that day counts as complete (the pet gets cake). One per birthday, and it can be undone.
 
 ## Mochi the sloth
 
@@ -47,7 +51,7 @@ Both are optional. Everything can be typed in by hand.
 
 ### 1. Supabase
 
-1. In the [SQL editor](https://supabase.com/dashboard/project/vublvpjshnkybdilzcog/sql/new), paste and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), then [`0002_pet.sql`](supabase/migrations/0002_pet.sql) and [`0003_pet_style.sql`](supabase/migrations/0003_pet_style.sql). It creates `profiles`, `challenges` and `daily_logs` with row-level security, so each person only sees their own rows. It also creates the `ingest_health` function the Shortcut uses.
+1. In the [SQL editor](https://supabase.com/dashboard/project/vublvpjshnkybdilzcog/sql/new), paste and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), then [`0002_pet.sql`](supabase/migrations/0002_pet.sql), [`0003_pet_style.sql`](supabase/migrations/0003_pet_style.sql) and [`0004_birthday.sql`](supabase/migrations/0004_birthday.sql). It creates `profiles`, `challenges` and `daily_logs` with row-level security, so each person only sees their own rows. It also creates the `ingest_health` function the Shortcut uses.
 2. Under **Authentication → URL Configuration**, set the Site URL to wherever the app is hosted, so confirmation emails link back to it.
 3. `.env` already holds the project URL and publishable key. Both are public by design, and row-level security protects the data. Put anything secret in `.env.local`, which git ignores.
 

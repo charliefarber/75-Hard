@@ -25,17 +25,18 @@ export interface Repo {
   listChallenges(): Promise<Challenge[]>;
   startChallenge(startDate: string, creditedDays?: number): Promise<Challenge>;
   endChallenge(id: string, status: 'reset' | 'completed', endedOn: string): Promise<void>;
-  updateChallenge(id: string, patch: Pick<Partial<Challenge>, 'pet_name' | 'treat_dates' | 'pet_style'>): Promise<void>;
+  updateChallenge(id: string, patch: ChallengePatch): Promise<void>;
 
   getLogs(from: string, to: string): Promise<DailyLog[]>;
   /** Save a day. `fields` limits the write to what changed, so a stale screen can't clobber synced data. */
   saveLog(log: DailyLog, fields?: (keyof DailyLog)[]): Promise<void>;
+  /** Save many whole days at once (used when ticking off days done before signing up). */
+  saveLogs(logs: DailyLog[]): Promise<void>;
 }
 
-const LOG_COLUMNS =
-  'log_date, workouts, water_ml, pages_read, followed_diet, no_cheat_meal, no_alcohol, steps, steps_source, calories, calories_source, notes';
-const PROFILE_COLUMNS =
-  'id, display_name, water_goal_ml, step_goal, calorie_goal, workout_minutes, reading_goal_pages, steps_required, timezone, health_sync_token';
+// '*' so the app keeps working whichever optional columns (pet, birthday) exist yet.
+const LOG_COLUMNS = '*';
+const PROFILE_COLUMNS = '*';
 
 export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 export const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -45,6 +46,8 @@ function check<T>(res: { data: T; error: { message: string } | null }): T {
   if (res.error) throw new Error(res.error.message);
   return res.data;
 }
+
+export type ChallengePatch = Pick<Partial<Challenge>, 'pet_name' | 'treat_dates' | 'pet_style' | 'start_date' | 'credited_days'>;
 
 export class SupabaseRepo implements Repo {
   readonly kind = 'supabase' as const;
@@ -116,6 +119,8 @@ export class SupabaseRepo implements Repo {
   async updateProfile(patch: Partial<Profile>) {
     const { id: _id, health_sync_token: _t, ...rest } = patch;
     const res = await this.sb.from('profiles').update(rest).eq('id', this.uid()).select(PROFILE_COLUMNS).single();
+    if (res.error && /birthday/.test(res.error.message))
+      throw new Error('Saving birthdays needs a database update: run supabase/migrations/0004_birthday.sql in Supabase.');
     return check(res) as Profile;
   }
 
@@ -165,7 +170,7 @@ export class SupabaseRepo implements Repo {
     check(await this.sb.from('challenges').update({ status, ended_on: endedOn }).eq('id', id));
   }
 
-  async updateChallenge(id: string, patch: Pick<Partial<Challenge>, 'pet_name' | 'treat_dates' | 'pet_style'>) {
+  async updateChallenge(id: string, patch: ChallengePatch) {
     const { error } = await this.sb.from('challenges').update(patch).eq('id', id);
     if (error && /pet_style/.test(error.message))
       throw new Error('Saving the sloth style needs a database update: run supabase/migrations/0003_pet_style.sql in Supabase.');
@@ -187,8 +192,17 @@ export class SupabaseRepo implements Repo {
   async saveLog(log: DailyLog, fields?: (keyof DailyLog)[]) {
     const row: Record<string, unknown> = { user_id: this.uid(), log_date: log.log_date };
     for (const k of fields ?? (Object.keys(log) as (keyof DailyLog)[])) row[k] = log[k];
-    check(await this.sb.from('daily_logs').upsert(row, { onConflict: 'user_id,log_date' }));
+    const res = await this.sb.from('daily_logs').upsert(row, { onConflict: 'user_id,log_date' });
+    if (res.error && /birthday_pass/.test(res.error.message))
+      throw new Error('The birthday pass needs a database update: run supabase/migrations/0004_birthday.sql in Supabase.');
+    check(res);
   }
+  async saveLogs(logs: DailyLog[]) {
+    if (!logs.length) return;
+    const uid = this.uid();
+    check(await this.sb.from('daily_logs').upsert(logs.map((l) => ({ ...l, user_id: uid })), { onConflict: 'user_id,log_date' }));
+  }
+
 }
 
 // ---------------------------------------------------------------------------
@@ -325,7 +339,7 @@ export class LocalRepo implements Repo {
     });
   }
 
-  async updateChallenge(id: string, patch: Pick<Partial<Challenge>, 'pet_name' | 'treat_dates' | 'pet_style'>) {
+  async updateChallenge(id: string, patch: ChallengePatch) {
     this.mutate((s) => {
       const c = s.challenges.find((x) => x.id === id);
       if (c) Object.assign(c, patch);
@@ -340,6 +354,10 @@ export class LocalRepo implements Repo {
 
   async saveLog(log: DailyLog) {
     this.mutate((s) => (s.logs[log.log_date] = log));
+  }
+
+  async saveLogs(logs: DailyLog[]) {
+    this.mutate((s) => logs.forEach((l) => (s.logs[l.log_date] = l)));
   }
 }
 
