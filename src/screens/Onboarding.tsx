@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import { useApp } from '../data/AppData';
 import { dayNumber, finishDate, toISODate, todayISO } from '../lib/challenge';
-import { Toggle } from '../components/ui';
+import { ToggleRow } from '../components/ui';
 import { WATER_PRESETS } from './ProfileScreen';
 
 type Start = 'today' | 'tomorrow' | 'earlier';
@@ -97,13 +97,13 @@ export function Onboarding() {
                   Pick a date before today.
                 </span>
               )}
-              <div className="row" style={{ borderBottom: 0, padding: 0 }}>
-                <div className="row-text">
-                  <span className="row-title">Tick off the days so far</span>
-                  <span className="row-sub">Marks {format(parseISO(earlierOk ? earlier : yesterday), 'd MMM')} to yesterday as complete. Change any of them in the calendar.</span>
-                </div>
-                <Toggle checked={tickOff} onChange={setTickOff} label="Tick off the days so far" />
-              </div>
+              <ToggleRow
+                title="Tick off the days so far"
+                sub={`Marks ${format(parseISO(earlierOk ? earlier : yesterday), 'd MMM')} to yesterday as complete. Change any of them in the calendar.`}
+                checked={tickOff}
+                onChange={setTickOff}
+                style={{ borderBottom: 0, margin: 0, width: '100%', padding: '6px 0' }}
+              />
             </>
           )}
           <p className="card-sub" style={{ margin: 0 }}>

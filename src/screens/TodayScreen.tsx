@@ -4,7 +4,7 @@ import { useApp } from '../data/AppData';
 import type { DailyLog, Workout } from '../data/types';
 import { dayNumber, litres, summarise, taskStatuses, toISODate, weekSteps } from '../lib/challenge';
 import { GLASS_ML, Glass } from '../components/Glass';
-import { Ring, Sheet, Toggle, fmt } from '../components/ui';
+import { Ring, Sheet, ToggleRow, fmt } from '../components/ui';
 import { IconCheck, IconFlame, IconGrid, IconNote, IconRefresh, IconUndo } from '../components/Icons';
 import { success, tap } from '../lib/haptics';
 import { Celebration } from '../components/Celebration';
@@ -623,15 +623,7 @@ function Stat({ label, value, icon }: { label: string; value: string; icon?: boo
 }
 
 function DietRow({ title, sub, checked, onChange }: { title: string; sub: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <div className="row">
-      <div className="row-text">
-        <span className="row-title">{title}</span>
-        <span className="row-sub">{sub}</span>
-      </div>
-      <Toggle checked={checked} onChange={onChange} label={title} />
-    </div>
-  );
+  return <ToggleRow title={title} sub={sub} checked={checked} onChange={onChange} />;
 }
 
 function WorkoutSheet({

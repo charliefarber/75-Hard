@@ -410,3 +410,25 @@ button.row { color: inherit; }
 
 /* Long sheets scroll; their contents must never squash to fit. */
 .sheet > * { flex-shrink: 0; }
+
+/* Whole-row switches: big tap target, instant feedback */
+.toggle-row {
+  width: 100%; border: 0; background: none; text-align: left; color: inherit;
+  border-bottom: 1px solid var(--line); cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  margin: 0 -16px; padding: 12px 16px; width: calc(100% + 32px); border-radius: 0;
+  transition: background 0.15s;
+}
+.card.list .toggle-row:last-child { border-bottom: 0; }
+.toggle-row:active { background: var(--surface-2); }
+.toggle-row:focus-visible { outline-offset: -3px; }
+.toggle-visual { pointer-events: none; }
+.toggle-visual.on .track { background: var(--green); }
+.toggle-visual.on .knob { transform: translateX(20px); }
+button, .row, .chip-btn, .tab { touch-action: manipulation; }
+.card.list { overflow: hidden; }
+button.row:not(.toggle-row) { transition: background 0.15s; }
+.card.list > button.row:not(.toggle-row):active { background: var(--surface-2); }
+.toggle-row { position: relative; border-bottom: 0; }
+.toggle-row::after { content: ''; position: absolute; left: 16px; right: 16px; bottom: 0; height: 1px; background: var(--line); }
+.card.list .toggle-row:last-child::after { display: none; }

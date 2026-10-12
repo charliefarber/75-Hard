@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type CSSProperties, type ReactNode } from 'react';
 import { tap } from '../lib/haptics';
 
 export function Ring({
@@ -74,6 +74,47 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
       <span className="track" />
       <span className="knob" />
     </span>
+  );
+}
+
+/**
+ * A whole row that acts as one big switch: tap anywhere on it (title, blank
+ * space or the switch) to flip it. Much easier to hit than the switch alone.
+ */
+export function ToggleRow({
+  title,
+  sub,
+  checked,
+  onChange,
+  style,
+}: {
+  title: string;
+  sub?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  style?: CSSProperties;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      className="row toggle-row"
+      style={style}
+      onClick={() => {
+        tap();
+        onChange(!checked);
+      }}
+    >
+      <span className="row-text">
+        <span className="row-title">{title}</span>
+        {sub && <span className="row-sub">{sub}</span>}
+      </span>
+      <span className={`toggle toggle-visual${checked ? ' on' : ''}`} aria-hidden="true">
+        <span className="track" />
+        <span className="knob" />
+      </span>
+    </button>
   );
 }
 
