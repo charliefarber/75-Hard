@@ -78,7 +78,7 @@ export function AuthScreen() {
             One day at a time.
           </h1>
           <p style={{ margin: 0, fontSize: 16, lineHeight: 1.5, color: 'var(--mint-soft)' }}>
-            Two workouts, a gallon of water, ten pages, clean eating and 10k steps, all in one place.
+            90 minutes of workouts, a gallon of water, ten pages, clean eating and 70k steps a week, all in one place.
           </p>
         </div>
       </div>

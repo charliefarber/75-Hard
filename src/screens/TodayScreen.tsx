@@ -1,12 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { addDays, format, isAfter, parseISO, startOfWeek } from 'date-fns';
 import { useApp } from '../data/AppData';
-import type { DailyLog, Workout } from '../data/types';
+import type { DailyLog, WeightUnit, WorkoutEntry, WorkoutFavorite } from '../data/types';
+import { workoutGoal, workoutMinutes } from '../data/types';
 import { dayNumber, litres, summarise, taskStatuses, toISODate, weekSteps } from '../lib/challenge';
 import { GLASS_ML, Glass } from '../components/Glass';
-import { Ring, Sheet, ToggleRow, fmt } from '../components/ui';
+import { Ring, Sheet, Toast, ToggleRow, fmt } from '../components/ui';
 import { IconCheck, IconFlame, IconGrid, IconNote, IconRefresh, IconUndo } from '../components/Icons';
 import { success, tap } from '../lib/haptics';
+import { bodyStats, dayBurned, latestWeight, weighIns, weightTrend, weightUnitFor } from '../lib/body';
+import { favoriteName, newEntryId, recentWorkouts, toggleFavorite, type RecentWorkout } from '../lib/workouts';
+import { photoDays } from '../lib/photos';
+import { usePhotoUrls } from '../data/usePhotoUrls';
+import { DaySummary, BurnedSheet } from '../components/DaySummary';
+import { WorkoutsCard } from '../components/WorkoutsCard';
+import { WorkoutPicker, type PickerStart } from '../components/WorkoutPicker';
+import { CheckInCard, WeightSheet } from '../components/CheckIn';
+import { PhotoViewer } from '../components/PhotoViewer';
+import '../styles/log.css';
 import { Celebration } from '../components/Celebration';
 import { BirthdayCake } from '../components/BirthdayCake';
 import { RecapSheet, markRecapSeen, pendingRecapWeek } from '../components/Recap';
@@ -15,20 +26,36 @@ import { PetSprite } from '../components/PetSprite';
 import { MOODS, STAGES, petState, stageFor } from '../lib/pet';
 import { fullnessColor } from './PetScreen';
 
-const WORKOUT_TYPES = ['Run', 'Walk', 'Strength', 'HIIT', 'Cycle', 'Yoga', 'Pilates', 'Swim', 'Class', 'Other'];
-
 export function TodayScreen({
   date,
   setDate,
   openProgress,
   openPet,
+  openProfile,
 }: {
   date: string;
   setDate: (d: string) => void;
   openProgress: () => void;
   openPet: () => void;
+  /** Open Profile at the "about you" section (for calorie estimates). */
+  openProfile: () => void;
 }) {
-  const { profile, challenge, logs, logFor, updateLog, today, health, syncHealth, applyBirthdayPass, undoBirthdayPass } = useApp();
+  const {
+    profile,
+    challenge,
+    logs,
+    logFor,
+    updateLog,
+    updateProfile,
+    setPhoto,
+    removePhoto,
+    reportError,
+    today,
+    health,
+    syncHealth,
+    applyBirthdayPass,
+    undoBirthdayPass,
+  } = useApp();
   const [bdayIntro, setBdayIntro] = useState(false);
   // Weekly recap: last week's, once, on the first open of a new week.
   const [recapWeek, setRecapWeek] = useState<string | null>(null);
@@ -38,9 +65,18 @@ export function TodayScreen({
     setRecapChecked(true);
     setRecapWeek(pendingRecapWeek(challenge.start_date, today));
   }, [challenge, today, recapChecked]);
-  const [sheet, setSheet] = useState<null | { kind: 'workout'; index: number } | { kind: 'steps' } | { kind: 'calories' }>(null);
+  const [sheet, setSheet] = useState<null | 'steps' | 'calories' | 'burned' | 'weight'>(null);
+  const [picker, setPicker] = useState<{ open: boolean; start: PickerStart }>({ open: false, start: null });
+  const [viewer, setViewer] = useState<number | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [toast, setToast] = useState<null | { message: string; undo?: () => void }>(null);
+  const closeToast = useCallback(() => setToast(null), []);
 
   const log = logFor(date);
+  const body = useMemo(() => (profile ? bodyStats(profile, logs, date) : null), [profile, logs, date]);
+  const recents = useMemo(() => recentWorkouts(logs, date), [logs, date]);
+  const trend = useMemo(() => weightTrend(weighIns(logs)), [logs]);
+  const thumb = usePhotoUrls([log.photo_path], true);
   const tasks = useMemo(() => (profile ? taskStatuses(log, profile) : []), [log, profile]);
   const summary = useMemo(
     () => (challenge && profile ? summarise(challenge, logs, profile, today) : null),
@@ -101,8 +137,6 @@ export function TodayScreen({
   const headline =
     calendarIndex < 1 ? 'Starts soon' : viewing?.state === 'missed' ? 'Didn’t count' : `Day ${viewing?.day ?? summary.currentDay}`;
   const set = (patch: Partial<DailyLog>) => updateLog(date, (l) => ({ ...l, ...patch }));
-  const setWorkout = (i: number, w: Workout) =>
-    updateLog(date, (l) => ({ ...l, workouts: l.workouts.map((x, j) => (j === i ? w : x)) }));
 
   // Week strip: the Mon–Sun week containing the selected day.
   const weekStart = startOfWeek(parseISO(date), { weekStartsOn: 1 });
@@ -124,15 +158,61 @@ export function TodayScreen({
   const weekAgo = toISODate(addDays(parseISO(today), -7));
   const missed = isToday ? summary.missedDays.filter((m) => m.date >= weekAgo) : [];
   const lastMissed = missed[missed.length - 1];
-  const steps = log.steps ?? 0;
-  const calGoal = profile.calorie_goal;
-  const calories = log.calories ?? 0;
   const healthSourced = (s: string | null) => s === 'health' || s === 'shortcut';
 
   const glassCount = Math.min(32, Math.max(Math.ceil(profile.water_goal_ml / GLASS_ML), Math.ceil(log.water_ml / GLASS_ML)));
   const stepWeek = weekSteps(logs, date);
   const weekGoal = profile.step_goal * 7;
-  const k = (n: number) => (n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k` : String(n));
+
+  // Workouts
+  const goal = workoutGoal(profile);
+  const minutes = workoutMinutes(log);
+  const stats = body!;
+  const burned = dayBurned(log, stats);
+  const favorites = profile.workout_favorites ?? [];
+  const quick: (WorkoutFavorite | RecentWorkout)[] = favorites.length ? favorites : recents.slice(0, 4);
+  const saveEntry = (entry: WorkoutEntry) =>
+    updateLog(date, (l) => ({
+      ...l,
+      workouts: l.workouts.some((w) => w.id === entry.id) ? l.workouts.map((w) => (w.id === entry.id ? entry : w)) : [...l.workouts, entry],
+    }));
+  const quickLog = (f: WorkoutFavorite | RecentWorkout) => {
+    const entry: WorkoutEntry = {
+      id: newEntryId(),
+      activity: f.activity,
+      ...(f.name ? { name: f.name } : {}),
+      minutes: f.minutes,
+      intensity: f.intensity,
+      kcal: null,
+      source: 'manual',
+    };
+    success();
+    saveEntry(entry);
+    setToast({
+      message: `Added ${favoriteName(f)}, ${f.minutes} min`,
+      undo: () => updateLog(date, (l) => ({ ...l, workouts: l.workouts.filter((w) => w.id !== entry.id) })),
+    });
+  };
+
+  // Weight & photo
+  const unit: WeightUnit = weightUnitFor(profile.weight_unit);
+  const weightKg = typeof log.weight_kg === 'number' ? log.weight_kg : null;
+  const lastBefore = latestWeight(logs, toISODate(addDays(parseISO(date), -1)));
+  const point = trend.find((t) => t.date === date) ?? null;
+  const weekAgo7 = toISODate(addDays(parseISO(date), -7));
+  const earlier = [...trend].reverse().find((t) => t.date <= weekAgo7) ?? null;
+  const photos = photoDays(logs, (d) => byDate.get(d)?.day ?? null);
+  const pickPhoto = async (file: File) => {
+    setPhotoBusy(true);
+    try {
+      await setPhoto(date, file);
+      success();
+    } catch (e) {
+      reportError(e);
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
 
   return (
     <div className="screen">
@@ -243,6 +323,20 @@ export function TodayScreen({
       </header>
 
       <main style={{ padding: '18px 16px 0', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <DaySummary
+          eaten={log.calories}
+          calorieGoal={profile.calorie_goal}
+          eatenFromHealth={healthSourced(log.calories_source)}
+          burned={burned}
+          workoutMinutes={minutes}
+          workoutGoal={goal}
+          steps={log.steps}
+          weekSteps={stepWeek.total}
+          weekGoal={weekGoal}
+          onEaten={() => setSheet('calories')}
+          onBurned={() => setSheet('burned')}
+          onSteps={() => setSheet('steps')}
+        />
         <button
           className="card"
           onClick={openPet}
@@ -312,7 +406,13 @@ export function TodayScreen({
               tap();
               updateLog(date, (l) => ({
                 ...l,
-                workouts: l.workouts.map((w) => ({ ...w, done: true, minutes: Math.max(w.minutes, profile.workout_minutes) })),
+                workouts:
+                  workoutMinutes(l) >= goal
+                    ? l.workouts
+                    : [
+                        ...l.workouts,
+                        { id: newEntryId(), activity: 'workout', minutes: goal - workoutMinutes(l), intensity: 'normal', kcal: null, source: 'manual' },
+                      ],
                 water_ml: Math.max(l.water_ml, profile.water_goal_ml),
                 pages_read: Math.max(l.pages_read, profile.reading_goal_pages),
                 followed_diet: true,
@@ -363,61 +463,31 @@ export function TodayScreen({
           </section>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-          <button
-            className="card"
-            style={{ border: 0, textAlign: 'left', gap: 12 }}
-            onClick={() => setSheet({ kind: 'steps' })}
-            aria-label={`Steps: ${fmt(stepWeek.total)} of ${fmt(weekGoal)} this week, ${fmt(steps)} today. Edit today`}
-          >
-            <div className="card-head">
-              <span style={{ fontSize: 14, fontWeight: 700 }}>Steps</span>
-              <span className="chip">{healthSourced(log.steps_source) ? 'Health' : 'Week'}</span>
-            </div>
-            <div style={{ alignSelf: 'center' }}>
-              <Ring size={100} stroke={10} value={stepWeek.total} max={weekGoal} color="var(--steps)" track="var(--steps-tint)" label={`${fmt(stepWeek.total)} of ${fmt(weekGoal)} steps this week`}>
-                <span style={{ fontSize: 18, fontWeight: 800 }}>{k(stepWeek.total)}</span>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>of {k(weekGoal)} wk</span>
-              </Ring>
-            </div>
-            <span className="card-sub" style={{ textAlign: 'center' }}>
-              <strong style={{ color: 'var(--ink)' }}>{fmt(steps)}</strong> {isToday ? 'today' : 'that day'}
-            </span>
-          </button>
+        <CheckInCard
+          weightKg={weightKg}
+          last={lastBefore}
+          avg={point?.avg ?? null}
+          weekChange={point && earlier ? point.avg - earlier.avg : null}
+          unit={unit}
+          photoUrl={log.photo_path ? thumb[log.photo_path] : undefined}
+          hasPhoto={!!log.photo_path}
+          busy={photoBusy}
+          isToday={isToday}
+          onWeight={() => setSheet('weight')}
+          onPhoto={() => setViewer(Math.max(0, photos.findIndex((p) => p.date === date)))}
+          onPickPhoto={pickPhoto}
+        />
 
-          <button className="card" style={{ border: 0, textAlign: 'left', gap: 12 }} onClick={() => setSheet({ kind: 'calories' })} aria-label={`Calories: ${fmt(calories)} eaten. Edit`}>
-            <div className="card-head">
-              <span style={{ fontSize: 14, fontWeight: 700 }}>Calories</span>
-              {healthSourced(log.calories_source) ? <span className="chip">Lifesum</span> : null}
-            </div>
-            <div style={{ alignSelf: 'center' }}>
-              <Ring
-                size={100}
-                stroke={10}
-                value={calories}
-                max={calGoal ?? Math.max(calories, 1)}
-                color={calGoal && calories > calGoal ? 'var(--steps)' : 'var(--green)'}
-                track="var(--mint-tint)"
-                label={`${fmt(calories)} kcal eaten`}
-              >
-                {calGoal ? (
-                  <>
-                    <span style={{ fontSize: 18, fontWeight: 800 }}>{fmt(Math.abs(calGoal - calories))}</span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{calories > calGoal ? 'kcal over' : 'kcal left'}</span>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ fontSize: 18, fontWeight: 800 }}>{fmt(calories)}</span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>kcal</span>
-                  </>
-                )}
-              </Ring>
-            </div>
-            <span className="card-sub" style={{ textAlign: 'center' }}>
-              {calGoal ? `${fmt(calories)} of ${fmt(calGoal)} eaten` : 'eaten today'}
-            </span>
-          </button>
-        </div>
+        <WorkoutsCard
+          entries={log.workouts}
+          goal={goal}
+          body={stats}
+          quick={quick}
+          quickIsRecent={!favorites.length}
+          onAdd={() => setPicker({ open: true, start: null })}
+          onEdit={(entry) => setPicker({ open: true, start: { entry } })}
+          onQuickLog={quickLog}
+        />
 
         <section className="card" aria-labelledby="water-h">
           <div className="card-head" style={{ alignItems: 'baseline' }}>
@@ -467,46 +537,6 @@ export function TodayScreen({
           </div>
         </section>
 
-        <section className="card list" aria-label="Workouts">
-          {log.workouts.map((w, i) => {
-            const t = tasks.find((x) => x.id === (i === 0 ? 'workout1' : 'workout2'));
-            const done = w.done;
-            return (
-              <button
-                key={i}
-                className="row"
-                style={{ border: 0, borderBottom: i === 0 ? '1px solid var(--line)' : 0, background: 'none', textAlign: 'left', width: '100%' }}
-                onClick={() => setSheet({ kind: 'workout', index: i })}
-              >
-                <span
-                  className="icon-badge"
-                  style={
-                    done
-                      ? { background: 'var(--green)', color: '#fff', animation: 'pop 0.4s var(--ease)' }
-                      : { border: '2px dashed #b7c2b9' }
-                  }
-                >
-                  {done && <IconCheck size={20} strokeWidth={2.6} />}
-                </span>
-                <span className="row-text">
-                  <span className="row-title">Workout {i + 1}</span>
-                  <span className="row-sub" style={t?.hint ? { color: '#8a4b00', fontWeight: 600 } : undefined}>
-                    {t?.hint ??
-                      (done
-                        ? [w.type || 'Workout', `${w.minutes} min`, w.source === 'health' ? 'from Apple Health' : null].filter(Boolean).join(' · ')
-                        : `${profile.workout_minutes} min · indoors or out`)}
-                  </span>
-                </span>
-                {!done && (
-                  <span className="btn btn-sm btn-dark" aria-hidden="true">
-                    Log
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </section>
-
         <section className="card list" aria-label="Daily habits">
           <DietRow
             title={`Read ${profile.reading_goal_pages} pages`}
@@ -533,20 +563,75 @@ export function TodayScreen({
         </section>
       </main>
 
-      <WorkoutSheet
-        open={sheet?.kind === 'workout'}
-        workout={sheet?.kind === 'workout' ? log.workouts[sheet.index] : undefined}
-        index={sheet?.kind === 'workout' ? sheet.index : 0}
-        minMinutes={profile.workout_minutes}
-        onClose={() => setSheet(null)}
-        onSave={(w) => {
-          if (sheet?.kind === 'workout') setWorkout(sheet.index, w);
-          setSheet(null);
+      <WorkoutPicker
+        open={picker.open}
+        start={picker.start}
+        dayMinutes={minutes}
+        goal={goal}
+        body={stats}
+        favorites={favorites}
+        recents={recents}
+        onToggleFavorite={(f) => updateProfile({ workout_favorites: toggleFavorite(favorites, f) })}
+        onSave={(entry) => {
+          saveEntry(entry);
+          setPicker({ open: false, start: null });
         }}
+        onDelete={(id) => {
+          const removed = log.workouts.find((w) => w.id === id);
+          const at = log.workouts.findIndex((w) => w.id === id);
+          updateLog(date, (l) => ({ ...l, workouts: l.workouts.filter((w) => w.id !== id) }));
+          setPicker({ open: false, start: null });
+          if (removed)
+            setToast({
+              message: 'Workout deleted',
+              undo: () =>
+                updateLog(date, (l) => {
+                  const next = [...l.workouts];
+                  next.splice(Math.min(at, next.length), 0, removed);
+                  return { ...l, workouts: next };
+                }),
+            });
+        }}
+        onClose={() => setPicker({ open: false, start: null })}
       />
 
+      <BurnedSheet open={sheet === 'burned'} log={log} body={stats} onClose={() => setSheet(null)} openProfile={openProfile} logWeight={() => setSheet('weight')} />
+
+      <WeightSheet
+        open={sheet === 'weight'}
+        date={date}
+        isToday={isToday}
+        current={weightKg}
+        last={lastBefore}
+        avg={point?.avg ?? (lastBefore ? trend.find((t) => t.date === lastBefore.date)?.avg ?? null : null)}
+        unit={unit}
+        onUnit={(u) => updateProfile({ weight_unit: u })}
+        onSave={(kg) => {
+          set({ weight_kg: kg });
+          setSheet(null);
+          if (kg !== null) success();
+        }}
+        onClose={() => setSheet(null)}
+      />
+
+      {viewer !== null && photos.length > 0 && (
+        <PhotoViewer
+          photos={photos}
+          startIndex={viewer}
+          onClose={() => setViewer(null)}
+          onDelete={async (d) => {
+            try {
+              await removePhoto(d);
+            } catch (e) {
+              reportError(e);
+            }
+          }}
+        />
+      )}
+      {toast && <Toast tone="info" message={toast.message} onClose={closeToast} action={toast.undo ? { label: 'Undo', onClick: toast.undo } : undefined} />}
+
       <NumberSheet
-        open={sheet?.kind === 'steps'}
+        open={sheet === 'steps'}
         title="Steps"
         unit="steps"
         initial={log.steps}
@@ -564,7 +649,7 @@ export function TodayScreen({
       />
 
       <NumberSheet
-        open={sheet?.kind === 'calories'}
+        open={sheet === 'calories'}
         title="Calories eaten"
         unit="kcal"
         initial={log.calories}
@@ -623,86 +708,6 @@ function Stat({ label, value, icon }: { label: string; value: string; icon?: boo
 
 function DietRow({ title, sub, checked, onChange }: { title: string; sub?: string; checked: boolean; onChange: (v: boolean) => void }) {
   return <ToggleRow title={title} sub={sub} checked={checked} onChange={onChange} />;
-}
-
-function WorkoutSheet({
-  open,
-  workout,
-  index,
-  minMinutes,
-  onClose,
-  onSave,
-}: {
-  open: boolean;
-  workout?: Workout;
-  index: number;
-  minMinutes: number;
-  onClose: () => void;
-  onSave: (w: Workout) => void;
-}) {
-  const [type, setType] = useState('');
-  const [minutes, setMinutes] = useState(minMinutes);
-
-  useEffect(() => {
-    if (!open) return;
-    setType(workout?.type ?? '');
-    setMinutes(workout?.done && workout.minutes ? workout.minutes : minMinutes);
-  }, [open, workout, minMinutes]);
-
-  const presets = [minMinutes, 60, 75, 90].filter((v, i, a) => a.indexOf(v) === i);
-
-  return (
-    <Sheet open={open} onClose={onClose} title={`Workout ${index + 1}`}>
-      <div className="chips" role="group" aria-label="Workout type">
-        {WORKOUT_TYPES.map((t) => (
-          <button key={t} className="chip-btn" aria-pressed={type === t} onClick={() => (tap(), setType(type === t ? '' : t))}>
-            {t}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div className="card-head">
-          <span className="row-title">Length</span>
-          <span style={{ fontSize: 20, fontWeight: 800 }}>
-            {minutes} <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--muted)' }}>min</span>
-          </span>
-        </div>
-        <input
-          type="range"
-          min={10}
-          max={150}
-          step={5}
-          value={minutes}
-          onChange={(e) => setMinutes(Number(e.target.value))}
-          aria-label="Workout length in minutes"
-          style={{ width: '100%', accentColor: 'var(--green)' }}
-        />
-        <div className="chips">
-          {presets.map((p) => (
-            <button key={p} className="chip-btn" aria-pressed={minutes === p} onClick={() => setMinutes(p)}>
-              {p} min
-            </button>
-          ))}
-        </div>
-        {minutes < minMinutes && (
-          <span className="card-sub" style={{ color: '#8a4b00', fontWeight: 600 }}>
-            75 Hard workouts are at least {minMinutes} minutes.
-          </span>
-        )}
-      </div>
-
-
-      <button className="btn btn-primary btn-block" onClick={() => onSave({ done: true, minutes, type, outdoor: workout?.outdoor ?? false, source: 'manual' })}>
-        {workout?.done ? 'Save' : 'Mark done'}
-      </button>
-      {workout?.done && (
-        <button className="btn btn-ghost btn-block" onClick={() => onSave({ done: false, minutes: 0, type: '', outdoor: false })}>
-          Clear this workout
-        </button>
-      )}
-    </Sheet>
-  );
 }
 
 function NumberSheet({

@@ -1,18 +1,39 @@
 export type Source = 'manual' | 'health' | 'shortcut';
 
-export interface Workout {
-  done: boolean;
+export type Intensity = 'light' | 'normal' | 'hard';
+
+/** One logged activity. A day's workouts are complete when their minutes add up to her daily goal. */
+export interface WorkoutEntry {
+  id: string;
+  /** Activity id from lib/activities.ts ('custom' for her own). */
+  activity: string;
+  /** Her own name for a custom activity, or the Apple Health / older label. */
+  name?: string;
   minutes: number;
-  type: string;
-  outdoor: boolean;
+  intensity: Intensity;
+  /**
+   * Her own calorie number, if she ever enters one. Null (the normal case) means it's estimated
+   * when shown, from the activity, effort, minutes and her weight on that day.
+   */
+  kcal?: number | null;
   source?: Source;
-  /** Start time of the Apple Health workout this slot was filled from. */
+  /** Start time of the Apple Health workout this came from. */
   healthId?: string;
 }
 
+/** A saved workout she can log in one tap. */
+export interface WorkoutFavorite {
+  activity: string;
+  name?: string;
+  minutes: number;
+  intensity: Intensity;
+}
+
+export type WeightUnit = 'kg' | 'lb' | 'st';
+
 export interface DailyLog {
   log_date: string; // yyyy-MM-dd, local calendar day
-  workouts: Workout[];
+  workouts: WorkoutEntry[];
   water_ml: number;
   pages_read: number;
   followed_diet: boolean;
@@ -25,6 +46,10 @@ export interface DailyLog {
   notes: string;
   /** The yearly birthday pass was spent on this day: it counts as complete (0004_birthday.sql). */
   birthday_pass?: boolean;
+  /** Morning weigh-in, always stored in kg (0010). */
+  weight_kg?: number | null;
+  /** Storage path of the day's progress photo (0010). */
+  photo_path?: string | null;
 }
 
 export interface Profile {
@@ -33,7 +58,15 @@ export interface Profile {
   water_goal_ml: number;
   step_goal: number;
   calorie_goal: number | null;
+  /** Legacy: length of each of the two workouts. Replaced by workout_goal_minutes. */
   workout_minutes: number;
+  /** Total workout minutes needed per day (0010). Defaults to 90. */
+  workout_goal_minutes?: number;
+  /** For calorie estimates (0010). */
+  height_cm?: number | null;
+  sex?: 'female' | 'male' | null;
+  weight_unit?: WeightUnit;
+  workout_favorites?: WorkoutFavorite[];
   reading_goal_pages: number;
   steps_required: boolean;
   /** yyyy-MM-dd (0004_birthday.sql). */
@@ -67,11 +100,9 @@ export interface AuthUser {
   email: string | null;
 }
 
-export const emptyWorkout = (): Workout => ({ done: false, minutes: 0, type: '', outdoor: false });
-
 export const emptyLog = (date: string): DailyLog => ({
   log_date: date,
-  workouts: [emptyWorkout(), emptyWorkout()],
+  workouts: [],
   water_ml: 0,
   pages_read: 0,
   followed_diet: false,
@@ -84,15 +115,62 @@ export const emptyLog = (date: string): DailyLog => ({
   notes: '',
 });
 
-/** Always returns exactly two workout slots, whatever the stored shape. */
+/** Daily workout goal in minutes (90 unless she changed it). */
+export const workoutGoal = (p: Pick<Profile, 'workout_goal_minutes' | 'workout_minutes'>) =>
+  p.workout_goal_minutes ?? (p.workout_minutes ? p.workout_minutes * 2 : 90);
+
+export const workoutMinutes = (log: Pick<DailyLog, 'workouts'> | undefined) =>
+  (log?.workouts ?? []).reduce((a, w) => a + (w.minutes || 0), 0);
+
+// Older logs stored two fixed slots: { done, minutes, type, outdoor }.
+const LEGACY_TYPES: Record<string, string> = {
+  run: 'run', running: 'run', walk: 'walk', walking: 'walk', strength: 'weights', hiit: 'hiit', cycle: 'cycle_road',
+  cycling: 'cycle_road', yoga: 'yoga_vinyasa', pilates: 'pilates_mat', swim: 'swim_laps', swimming: 'swim_laps',
+  class: 'circuit', other: 'workout', '': 'workout',
+};
+
+function toEntry(raw: unknown, i: number): WorkoutEntry | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const w = raw as Record<string, unknown>;
+  if ('activity' in w) {
+    const minutes = Number(w.minutes) || 0;
+    if (minutes <= 0) return null;
+    return {
+      id: String(w.id ?? `w${i}`),
+      activity: String(w.activity),
+      name: typeof w.name === 'string' ? w.name : undefined,
+      minutes,
+      intensity: w.intensity === 'light' || w.intensity === 'hard' ? w.intensity : 'normal',
+      kcal: typeof w.kcal === 'number' ? w.kcal : null,
+      source: (w.source as Source | undefined) ?? 'manual',
+      healthId: typeof w.healthId === 'string' ? w.healthId : undefined,
+    };
+  }
+  // Legacy slot
+  if (!w.done || !(Number(w.minutes) > 0)) return null;
+  const type = typeof w.type === 'string' ? w.type : '';
+  return {
+    id: `legacy${i}`,
+    activity: LEGACY_TYPES[type.toLowerCase()] ?? 'workout',
+    name: type && !LEGACY_TYPES[type.toLowerCase()] ? type : undefined,
+    minutes: Number(w.minutes),
+    intensity: 'normal',
+    kcal: null,
+    source: (w.source as Source | undefined) ?? 'manual',
+    healthId: typeof w.healthId === 'string' ? w.healthId : undefined,
+  };
+}
+
+/** Normalise a stored row: workouts become a clean list of entries (older two-slot logs convert). */
 export function normaliseLog(raw: Partial<DailyLog> & { log_date: string }): DailyLog {
   const base = emptyLog(raw.log_date);
-  const workouts = Array.isArray(raw.workouts) ? raw.workouts : [];
+  const list: unknown[] = Array.isArray(raw.workouts) ? raw.workouts : [];
   const { user_id: _u, updated_at: _t, ...rest } = raw as typeof raw & { user_id?: string; updated_at?: string };
   return {
     ...base,
     ...rest,
     notes: rest.notes ?? '',
-    workouts: [0, 1].map((i) => ({ ...emptyWorkout(), ...(workouts[i] ?? {}) })),
+    weight_kg: rest.weight_kg == null ? null : Number(rest.weight_kg),
+    workouts: list.map(toEntry).filter((x): x is WorkoutEntry => !!x),
   };
 }

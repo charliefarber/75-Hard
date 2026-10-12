@@ -8,7 +8,7 @@ A simple, good-looking daily tracker for the 75 Hard challenge. It's styled afte
 
 | Task | How it's logged |
 | --- | --- |
-| Workout 1 and 2 (45 min each, indoors or out) | Tap to log type and length, or auto-filled from Apple Health workouts |
+| Workouts: 90 minutes a day in any mix (say 45 min reformer + 30 min weights + 15 min stairs) | Pick from 100+ activities, set the length and Light / Normal / Hard; favourites log in one tap; Apple Health workouts come in too |
 | Water (any goal; presets for 2–4.5 L) | Tap glasses (250 ml each); also picks up water logged in Lifesum |
 | Read 10 pages | Switch |
 | Follow a diet, no cheat meals | Toggles |
@@ -16,9 +16,25 @@ A simple, good-looking daily tracker for the 75 Hard challenge. It's styled afte
 | Steps: weekly goal (70,000 by default), not a daily pass/fail | Apple Health, the iPhone Shortcut, or typed in |
 | Calories | Lifesum, through Apple Health, or typed in (shown against the calorie target, not pass/fail) |
 
-The progress picture is left out on purpose. There's also a notes box for each day.
+Not pass/fail, but tracked every day if she wants: **weight** (kg, lb or stone; the Progress tab shows each weigh-in and the 7-day average) and a **progress photo** (private, with a before/after compare). There's also a notes box for each day. The top of Today shows **Eaten · Burned · Steps** at a glance.
 
 **Missed days extend the challenge rather than restarting it.** A day only counts when every task is ticked off. A missed day just doesn't count: it shows as **+1** on the Progress grid, and the finish line moves back a day. The challenge ends on the 75th completed day. If a day was done but not logged, fill it in and it counts again. A manual **Restart at day 1** is still in Profile. Already partway through when signing up? Choose **Earlier**, pick the real start date, and optionally tick off every day so far. Any past day can be opened from the Progress calendar and filled in or changed (there's a one-tap "Tick everything off" for past days). The start date can be changed later in Profile.
+
+## Workouts and calories burned
+
+No heart-rate strap needed. Each of the ~105 activities in `src/lib/activities.ts` has three energy costs (light / normal / hard, in METs) from the Compendium of Physical Activities, the research table most fitness apps use, and each says what that effort means for that activity ("advanced, jumpboard, little rest" for reformer, "12 min/mile" for running). Calories are **active** calories, the extra burned by working out:
+
+```
+(MET × 3.5 × weight kg ÷ 200 − resting burn per minute) × minutes
+```
+
+Resting burn comes from Mifflin-St Jeor (weight from her latest weigh-in, height and sex from Profile → About you, age from her birthday), or 1 MET until those are filled in. Estimates are worked out when shown, so they sharpen as she adds details. Tap **Burned** on Today to see the breakdown.
+
+The day's workouts count once their minutes add up to the daily total (Profile → Daily goals → Workouts, 90 by default). Older days logged as "workout 1 / workout 2" are read the same way.
+
+## Weight and progress photos
+
+Weigh-ins are stored in kg and shown in her unit. Photos are shrunk on the phone (1600 px plus a small gallery copy) and re-encoded, which strips the hidden location data an iPhone camera adds, then go to a **private** storage bucket where each account can only reach its own folder. The app shows them through links that expire after an hour. Download my data lists them, and deleting the account deletes them.
 
 ## Weekly recap
 
@@ -55,7 +71,7 @@ Both are optional. Everything can be typed in by hand.
 
 ### 1. Supabase
 
-1. In the [SQL editor](https://supabase.com/dashboard/project/vublvpjshnkybdilzcog/sql/new), paste and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), then [`0002_pet.sql`](supabase/migrations/0002_pet.sql), [`0003_pet_style.sql`](supabase/migrations/0003_pet_style.sql) and [`0004_birthday.sql`](supabase/migrations/0004_birthday.sql). If the app ever says the database is missing a column, run [`0005_catch_up.sql`](supabase/migrations/0005_catch_up.sql): it adds anything from 0002–0004 that's missing, refreshes the API's schema cache, and is safe to run any number of times. [`0006_health_lookback.sql`](supabase/migrations/0006_health_lookback.sql) lets the Shortcut send the last few days (each with a `p_date`): steps keep the higher number, today's calories replace what's saved, and earlier days' calories keep the higher number. [`0007_health_replace.sql`](supabase/migrations/0007_health_replace.sql) supersedes that: for today and the 6 days before it, each Shortcut run replaces the steps and calories it sends (so a bad run is fixed by running it again); the partly-covered oldest day of a 7-day window only goes up; zeros are ignored; numbers typed by hand are kept (steps unless Health is higher). [`0008_hardening.sql`](supabase/migrations/0008_hardening.sql) applies two fixes from Supabase's security advisor. The migrations create `profiles`, `challenges` and `daily_logs` with row-level security, so each person only sees their own rows. It also creates the `ingest_health` function the Shortcut uses.
+1. In the [SQL editor](https://supabase.com/dashboard/project/vublvpjshnkybdilzcog/sql/new), paste and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), then [`0002_pet.sql`](supabase/migrations/0002_pet.sql), [`0003_pet_style.sql`](supabase/migrations/0003_pet_style.sql) and [`0004_birthday.sql`](supabase/migrations/0004_birthday.sql). If the app ever says the database is missing a column, run [`0005_catch_up.sql`](supabase/migrations/0005_catch_up.sql): it adds anything from 0002–0004 that's missing, refreshes the API's schema cache, and is safe to run any number of times. [`0006_health_lookback.sql`](supabase/migrations/0006_health_lookback.sql) lets the Shortcut send the last few days (each with a `p_date`): steps keep the higher number, today's calories replace what's saved, and earlier days' calories keep the higher number. [`0007_health_replace.sql`](supabase/migrations/0007_health_replace.sql) supersedes that: for today and the 6 days before it, each Shortcut run replaces the steps and calories it sends (so a bad run is fixed by running it again); the partly-covered oldest day of a 7-day window only goes up; zeros are ignored; numbers typed by hand are kept (steps unless Health is higher). [`0008_hardening.sql`](supabase/migrations/0008_hardening.sql) applies two fixes from Supabase's security advisor. [`0009_security.sql`](supabase/migrations/0009_security.sql) tightens table privileges and adds the data-rights functions (new sync token, delete my account). [`0010_health_week.sql`](supabase/migrations/0010_health_week.sql) removes a one-off Shortcut test endpoint. [`0011_workouts_weight_photos.sql`](supabase/migrations/0011_workouts_weight_photos.sql) adds the daily workout total, favourites, body details, weigh-ins and the private `progress-photos` bucket with its policies. The migrations create `profiles`, `challenges` and `daily_logs` with row-level security, so each person only sees their own rows. It also creates the `ingest_health` function the Shortcut uses.
 2. Under **Authentication → URL Configuration**, set the Site URL to wherever the app is hosted, so confirmation emails link back to it.
 3. `.env` already holds the project URL and publishable key. Both are public by design, and row-level security protects the data. Put anything secret in `.env.local`, which git ignores.
 
@@ -95,6 +111,9 @@ src/
   data/AppData.tsx        app state, optimistic saves (only changed fields are written)
   data/repo.ts            Supabase backend + on-device fallback
   lib/challenge.ts        75 Hard rules: day numbers, task checks, streaks, missed days
+  lib/activities.ts       workout library + calorie estimates
+  lib/body.ts             weight units, 7-day average, body details for estimates
+  lib/photos.ts           shrink + clean photos before upload
   health/                 HealthKit reader + merge rules (steps/water never go down,
                           Lifesum calories win unless typed by hand)
 supabase/migrations/      schema, RLS, Shortcut endpoint

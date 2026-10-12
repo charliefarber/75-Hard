@@ -1,13 +1,16 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { format, formatDistanceToNow, parseISO } from 'date-fns';
 import { useApp } from '../data/AppData';
-import type { Profile } from '../data/types';
+import type { Profile, WeightUnit } from '../data/types';
+import { workoutGoal } from '../data/types';
+import { formatMinutes } from '../lib/workouts';
+import { ageOn, weightUnitFor } from '../lib/body';
 import { supabaseAnonKey, supabaseUrl } from '../data/repo';
 import { litres, summarise } from '../lib/challenge';
 import { Sheet, fmt } from '../components/ui';
 import { IconChevron, IconCopy, IconHeart, IconLeaf } from '../components/Icons';
 
-type GoalKey = 'water_goal_ml' | 'step_goal' | 'calorie_goal' | 'workout_minutes' | 'reading_goal_pages';
+type GoalKey = 'water_goal_ml' | 'step_goal' | 'calorie_goal' | 'workout_goal_minutes' | 'reading_goal_pages';
 
 export const WATER_PRESETS = [
   { ml: 2000, label: '2 L' },
@@ -21,13 +24,18 @@ const GOALS: { key: GoalKey; label: string; unit: string; show: (p: Profile) => 
   { key: 'water_goal_ml', label: 'Water', unit: 'ml', show: (p) => `${litres(p.water_goal_ml, 1)} L` },
   { key: 'step_goal', label: 'Steps', unit: 'a week', show: (p) => `${fmt(p.step_goal * 7)} a week` },
   { key: 'calorie_goal', label: 'Calorie target', unit: 'kcal', show: (p) => (p.calorie_goal ? `${fmt(p.calorie_goal)} kcal` : 'Not set') },
-  { key: 'workout_minutes', label: 'Workout length', unit: 'min', show: (p) => `2 × ${p.workout_minutes} min` },
+  { key: 'workout_goal_minutes', label: 'Workouts', unit: 'min a day', show: (p) => `${formatMinutes(workoutGoal(p))} a day` },
   { key: 'reading_goal_pages', label: 'Reading', unit: 'pages', show: (p) => `${p.reading_goal_pages} pages` },
 ];
 
-export function ProfileScreen() {
+export function ProfileScreen({ focus }: { focus?: 'about' }) {
   const { repo, user, profile, challenge, logs, today, health, connectHealth, syncHealth, updateProfile, signOut, restartChallenge, history, changeStartDate, exportData } = useApp();
   const [editing, setEditing] = useState<GoalKey | 'name' | null>(null);
+  const [heightOpen, setHeightOpen] = useState(false);
+  const about = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (focus === 'about') requestAnimationFrame(() => about.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+  }, [focus]);
   const [dateEdit, setDateEdit] = useState<null | 'start' | 'birthday'>(null);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
@@ -159,6 +167,55 @@ export function ProfileScreen() {
         ))}
       </section>
 
+      <span className="section-label" ref={about} style={{ scrollMarginTop: 'calc(var(--safe-top) + 12px)' }}>
+        About you
+      </span>
+      <section className="card list">
+        <button className="row" style={{ ...ROW_BTN, borderBottomWidth: 1 }} onClick={() => setHeightOpen(true)}>
+          <span className="row-text">
+            <span className="row-title" style={{ fontWeight: 600 }}>
+              Height
+            </span>
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: 'var(--green-ink)' }}>
+            {profile.height_cm ? formatHeight(profile.height_cm, weightUnitFor(profile.weight_unit)) : 'Add'}
+            <IconChevron size={16} style={{ color: '#9aa59d' }} />
+          </span>
+        </button>
+        <div className="row">
+          <span className="row-text">
+            <span className="row-title" style={{ fontWeight: 600 }}>
+              Calorie maths as
+            </span>
+          </span>
+          <div className="segmented segmented-sm" role="group" aria-label="Calorie maths as">
+            {(['female', 'male'] as const).map((x) => (
+              <button key={x} type="button" aria-pressed={profile.sex === x} onClick={() => updateProfile({ sex: profile.sex === x ? null : x })}>
+                {x === 'female' ? 'Female' : 'Male'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="row" style={{ borderBottom: 0 }}>
+          <span className="row-text">
+            <span className="row-title" style={{ fontWeight: 600 }}>
+              Weight in
+            </span>
+          </span>
+          <div className="segmented segmented-sm" role="group" aria-label="Weight units">
+            {(['kg', 'lb', 'st'] as WeightUnit[]).map((x) => (
+              <button key={x} type="button" aria-pressed={weightUnitFor(profile.weight_unit) === x} onClick={() => updateProfile({ weight_unit: x })}>
+                {x === 'st' ? 'st & lb' : x}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+      <p className="card-sub" style={{ margin: '-4px 4px 0', lineHeight: 1.5 }}>
+        Only used to estimate calories burned, together with your weigh-ins
+        {profile.birthday ? ` and age (${ageOn(profile.birthday, today) ?? '?'})` : ' and your birthday, for age'}. Private to you.
+      </p>
+
       <span className="section-label">Your data</span>
       <section className="card list">
         <button
@@ -235,6 +292,17 @@ export function ProfileScreen() {
         onSave={(patch) => {
           updateProfile(patch);
           setEditing(null);
+        }}
+      />
+
+      <HeightSheet
+        open={heightOpen}
+        initial={profile.height_cm ?? null}
+        imperial={weightUnitFor(profile.weight_unit) !== 'kg'}
+        onClose={() => setHeightOpen(false)}
+        onSave={(cm) => {
+          updateProfile({ height_cm: cm });
+          setHeightOpen(false);
         }}
       />
 
@@ -393,6 +461,7 @@ function GoalSheet({
     if (field === 'name') setValue(profile.display_name);
     else if (field === 'water_goal_ml') setValue(String(profile.water_goal_ml / 1000));
     else if (field === 'step_goal') setValue(String(profile.step_goal * 7));
+    else if (field === 'workout_goal_minutes') setValue(String(workoutGoal(profile)));
     else setValue(profile[field]?.toString() ?? '');
   }, [field, profile]);
 
@@ -407,6 +476,7 @@ function GoalSheet({
     const n = parseInt(value, 10);
     if (field === 'calorie_goal') return onSave({ calorie_goal: n > 0 ? n : null });
     if (field === 'step_goal') return n > 0 ? onSave({ step_goal: Math.round(n / 7) }) : undefined;
+    if (field === 'workout_goal_minutes') return n >= 10 && n <= 600 ? onSave({ workout_goal_minutes: n }) : undefined;
     if (n > 0) onSave({ [field]: n } as Partial<Profile>);
   }
 
@@ -449,6 +519,20 @@ function GoalSheet({
           <p className="card-sub" style={{ margin: 0 }}>
             Steps don’t decide whether a day counts. Today shows how the week is going.
           </p>
+        )}
+        {field === 'workout_goal_minutes' && (
+          <>
+            <div className="chips">
+              {[60, 90, 120].map((m) => (
+                <button type="button" key={m} className="chip-btn" aria-pressed={value === String(m)} onClick={() => setValue(String(m))}>
+                  {formatMinutes(m)}
+                </button>
+              ))}
+            </div>
+            <p className="card-sub" style={{ margin: 0, lineHeight: 1.5 }}>
+              Any mix of workouts that adds up to this completes the day. 75 Hard’s two 45-minute workouts make 90.
+            </p>
+          </>
         )}
         {field === 'calorie_goal' && (
           <p className="card-sub" style={{ margin: 0 }}>
@@ -572,6 +656,89 @@ function ShortcutSheet({ open, onClose, token }: { open: boolean; onClose: () =>
       <button className="link-btn" style={{ alignSelf: 'flex-start', color: 'var(--danger)' }} onClick={() => regenerateSyncToken()}>
         Make a new token (the old one stops working)
       </button>
+    </Sheet>
+  );
+}
+
+function formatHeight(cm: number, unit: WeightUnit): string {
+  if (unit === 'kg') return `${Math.round(cm)} cm`;
+  const inches = Math.round(cm / 2.54);
+  return `${Math.floor(inches / 12)} ft ${inches % 12} in`;
+}
+
+function HeightSheet({
+  open,
+  initial,
+  imperial: startImperial,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  initial: number | null;
+  imperial: boolean;
+  onClose: () => void;
+  onSave: (cm: number | null) => void;
+}) {
+  const [imperial, setImperial] = useState(startImperial);
+  const [cm, setCm] = useState('');
+  const [ft, setFt] = useState('');
+  const [inch, setInch] = useState('');
+  useEffect(() => {
+    if (!open) return;
+    setImperial(startImperial);
+    setCm(initial ? String(Math.round(initial)) : '');
+    const total = initial ? Math.round(initial / 2.54) : 0;
+    setFt(initial ? String(Math.floor(total / 12)) : '');
+    setInch(initial ? String(total % 12) : '');
+  }, [open, initial, startImperial]);
+
+  const value = imperial ? (Number(ft || 0) * 12 + Number(inch || 0)) * 2.54 : Number(cm);
+  const valid = value >= 100 && value <= 250;
+  const digits = (v: string, n: number) => v.replace(/\D/g, '').slice(0, n);
+
+  return (
+    <Sheet open={open} onClose={onClose} title="Your height">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valid) onSave(Math.round(value * 10) / 10);
+        }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
+      >
+        <div className="segmented" role="group" aria-label="Units">
+          <button type="button" aria-pressed={!imperial} onClick={() => setImperial(false)}>
+            cm
+          </button>
+          <button type="button" aria-pressed={imperial} onClick={() => setImperial(true)}>
+            ft & in
+          </button>
+        </div>
+        {imperial ? (
+          <div style={{ display: 'flex', gap: 10 }}>
+            <label className="field" style={{ flex: 1 }}>
+              Feet
+              <input className="input" inputMode="numeric" value={ft} onChange={(e) => setFt(digits(e.target.value, 1))} placeholder="5" />
+            </label>
+            <label className="field" style={{ flex: 1 }}>
+              Inches
+              <input className="input" inputMode="numeric" value={inch} onChange={(e) => setInch(digits(e.target.value, 2))} placeholder="6" />
+            </label>
+          </div>
+        ) : (
+          <label className="field">
+            Centimetres
+            <input className="input" inputMode="numeric" value={cm} onChange={(e) => setCm(digits(e.target.value, 3))} placeholder="168" autoFocus />
+          </label>
+        )}
+        <button className="btn btn-primary btn-block" type="submit" disabled={!valid}>
+          Save
+        </button>
+        {initial !== null && (
+          <button type="button" className="btn btn-ghost btn-block" onClick={() => onSave(null)}>
+            Remove
+          </button>
+        )}
+      </form>
     </Sheet>
   );
 }

@@ -7,8 +7,8 @@ const profile = { water_goal_ml: 3000, workout_minutes: 45, reading_goal_pages: 
 const done = (date: string): DailyLog => ({
   ...emptyLog(date),
   workouts: [
-    { done: true, minutes: 45, type: 'Run', outdoor: true },
-    { done: true, minutes: 45, type: 'Yoga', outdoor: false },
+    { id: 'a', activity: 'run', minutes: 50, intensity: 'normal', kcal: 400 },
+    { id: 'b', activity: 'yoga_vinyasa', minutes: 45, intensity: 'normal', kcal: 120 },
   ],
   water_ml: 3000,
   pages_read: 10,

@@ -7,8 +7,8 @@ const profile = { water_goal_ml: 3000, workout_minutes: 45, reading_goal_pages: 
 const done = (date: string, steps = 10000): DailyLog => ({
   ...emptyLog(date),
   workouts: [
-    { done: true, minutes: 50, type: 'Run', outdoor: true },
-    { done: true, minutes: 45, type: 'Yoga', outdoor: false },
+    { id: 'a', activity: 'run', minutes: 50, intensity: 'normal', kcal: 400 },
+    { id: 'b', activity: 'yoga_vinyasa', minutes: 45, intensity: 'normal', kcal: 120 },
   ],
   water_ml: 3200,
   pages_read: 10,
@@ -28,7 +28,7 @@ describe('weekly recap', () => {
     expect(r).toMatchObject({ inPlay: 7, completed: 7, perfect: true, headline: 'Perfect week!' });
     expect(r.steps).toEqual({ total: 84000, goal: 70000, bestDay: '2026-10-04', bestSteps: 15000 });
     expect(r.water).toEqual({ avgMl: 3200, daysHit: 7 });
-    expect(r.workouts).toEqual({ logged: 14, possible: 14, minutes: 665 });
+    expect(r.workouts).toEqual({ minutes: 665, goalMinutes: 630, kcal: 3640, sessions: 14 });
     expect(r.readingDays).toBe(7);
   });
 

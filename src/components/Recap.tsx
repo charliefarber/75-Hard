@@ -141,9 +141,9 @@ export function RecapSheet({ open, monday: initial, onClose }: { open: boolean; 
         />
         <Stat
           label="Workouts"
-          value={`${r.workouts.logged}/${r.workouts.possible}`}
-          sub={`${Math.round(r.workouts.minutes / 6) / 10} hours moving`}
-          pct={r.workouts.possible ? r.workouts.logged / r.workouts.possible : 0}
+          value={hours(r.workouts.minutes)}
+          sub={`of ${hours(r.workouts.goalMinutes)} · ≈${fmt(r.workouts.kcal)} kcal burned`}
+          pct={r.workouts.goalMinutes ? r.workouts.minutes / r.workouts.goalMinutes : 0}
           color="var(--green)"
         />
         <Stat
@@ -169,6 +169,9 @@ export function RecapSheet({ open, monday: initial, onClose }: { open: boolean; 
     </Sheet>
   );
 }
+
+/** 665 → "11.1 h", 90 → "1.5 h". */
+const hours = (min: number) => `${(Math.round(min / 6) / 10).toString()} h`;
 
 function Stat({ label, value, sub, pct, color }: { label: string; value: string; sub: string; pct: number; color: string }) {
   return (

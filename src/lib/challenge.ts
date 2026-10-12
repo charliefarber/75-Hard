@@ -1,10 +1,10 @@
 import { addDays, differenceInCalendarDays, format, parseISO, startOfWeek } from 'date-fns';
 import type { Challenge, DailyLog, Profile } from '../data/types';
-import { emptyLog } from '../data/types';
+import { emptyLog, workoutGoal, workoutMinutes } from '../data/types';
 
 export const CHALLENGE_LENGTH = 75;
 
-export type TaskId = 'workout1' | 'workout2' | 'water' | 'reading' | 'diet' | 'alcohol';
+export type TaskId = 'workouts' | 'water' | 'reading' | 'diet' | 'alcohol';
 
 export interface TaskStatus {
   id: TaskId;
@@ -31,21 +31,19 @@ export function finishDate(startDate: string): string {
 }
 
 /**
- * The daily tasks that decide whether a day counts: two workouts of the minimum
- * length (indoors or out), water, reading, diet and no alcohol. Steps are a
- * weekly goal instead (see weekSteps) and never fail a day.
+ * The daily tasks that decide whether a day counts: workout minutes adding up to her daily
+ * goal (90 by default, any mix of activities), water, reading, diet and no alcohol. Steps are
+ * a weekly goal instead (see weekSteps) and never fail a day.
  */
-export function taskStatuses(log: DailyLog | undefined, profile: Pick<Profile, 'water_goal_ml' | 'workout_minutes' | 'reading_goal_pages'>): TaskStatus[] {
+export function taskStatuses(
+  log: DailyLog | undefined,
+  profile: Pick<Profile, 'water_goal_ml' | 'workout_minutes' | 'reading_goal_pages'> & Partial<Pick<Profile, 'workout_goal_minutes'>>,
+): TaskStatus[] {
   const l = log ?? emptyLog('');
-  const min = profile.workout_minutes;
-  const workout = (i: number): TaskStatus => {
-    const w = l.workouts[i];
-    const ok = !!w?.done && (w.minutes || 0) >= min;
-    return { id: i === 0 ? 'workout1' : 'workout2', label: `Workout ${i + 1}`, done: ok, hint: w?.done && !ok ? `Needs ${min} min` : undefined };
-  };
+  const goal = workoutGoal(profile);
+  const mins = workoutMinutes(l);
   return [
-    workout(0),
-    workout(1),
+    { id: 'workouts', label: 'Workouts', done: mins >= goal, hint: mins > 0 && mins < goal ? `${goal - mins} min to go` : undefined },
     { id: 'water', label: 'Water', done: l.water_ml >= profile.water_goal_ml },
     { id: 'reading', label: 'Reading', done: l.pages_read >= profile.reading_goal_pages },
     { id: 'diet', label: 'Diet', done: l.followed_diet && l.no_cheat_meal },

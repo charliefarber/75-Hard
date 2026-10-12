@@ -41,6 +41,7 @@ function Splash() {
 function Main() {
   const { status, today, error, clearError } = useApp();
   const [tab, setTab] = useState<Tab>('today');
+  const [profileFocus, setProfileFocus] = useState<'about' | undefined>();
   const [date, setDate] = useState(today);
 
   // Roll over to the new day if the app was left open past midnight.
@@ -78,7 +79,19 @@ function Main() {
 
   return (
     <div className="shell">
-      {tab === 'today' && <TodayScreen key="today" date={date} setDate={setDate} openProgress={() => setTab('progress')} openPet={() => setTab('pet')} />}
+      {tab === 'today' && (
+        <TodayScreen
+          key="today"
+          date={date}
+          setDate={setDate}
+          openProgress={() => setTab('progress')}
+          openPet={() => setTab('pet')}
+          openProfile={() => {
+            setProfileFocus('about');
+            setTab('profile');
+          }}
+        />
+      )}
       {tab === 'pet' && <PetScreen />}
       {tab === 'progress' && (
         <ProgressScreen
@@ -88,7 +101,7 @@ function Main() {
           }}
         />
       )}
-      {tab === 'profile' && <ProfileScreen />}
+      {tab === 'profile' && <ProfileScreen focus={profileFocus} />}
 
       <nav className="tabbar" aria-label="Main">
         <div className="tabbar-inner">
@@ -100,6 +113,7 @@ function Main() {
               onClick={() => {
                 tap();
                 if (id === 'today' && tab === 'today') setDate(today);
+                setProfileFocus(undefined);
                 setTab(id);
               }}
             >

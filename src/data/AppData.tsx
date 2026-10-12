@@ -2,10 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { addDays, parseISO } from 'date-fns';
 import { createRepo, type ChallengePatch, type Repo } from './repo';
 import type { AuthUser, Challenge, DailyLog, Profile } from './types';
-import { emptyLog } from './types';
+import { emptyLog, workoutGoal } from './types';
 import { toISODate, todayISO } from '../lib/challenge';
 import { healthAvailable, readHealthDays, requestHealthAccess } from '../health/health';
 import { logsDiffer, mergeHealthDay } from '../health/merge';
+import { preparePhoto } from '../lib/photos';
 
 type Status = 'loading' | 'signedOut' | 'needsChallenge' | 'ready';
 
@@ -30,8 +31,13 @@ interface AppData {
   health: HealthState;
   error: string | null;
   clearError(): void;
+  /** Show an error from a screen in the app's error banner. */
+  reportError(e: unknown): void;
   logFor(date: string): DailyLog;
   updateLog(date: string, fn: (log: DailyLog) => DailyLog): void;
+  /** Shrink, upload and attach a progress photo to a day (replacing any earlier one). */
+  setPhoto(date: string, file: Blob): Promise<void>;
+  removePhoto(date: string): Promise<void>;
   updateProfile(patch: Partial<Profile>): Promise<void>;
   regenerateSyncToken(): Promise<void>;
   /** Download everything stored for this account as a JSON file. */
@@ -57,10 +63,7 @@ const Ctx = createContext<AppData | null>(null);
 function completeLog(date: string, p: Profile): DailyLog {
   return {
     ...emptyLog(date),
-    workouts: [
-      { done: true, minutes: p.workout_minutes, type: '', outdoor: false, source: 'manual' },
-      { done: true, minutes: p.workout_minutes, type: '', outdoor: false, source: 'manual' },
-    ],
+    workouts: [{ id: `tick-${date}`, activity: 'workout', minutes: workoutGoal(p), intensity: 'normal', kcal: null, source: 'manual' }],
     water_ml: p.water_goal_ml,
     pages_read: p.reading_goal_pages,
     followed_diet: true,
@@ -112,8 +115,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const loadLogs = useCallback(
     async (c: Challenge | null) => {
       const now = todayISO();
-      const twoWeeksAgo = toISODate(addDays(parseISO(now), -14));
-      const from = c && c.start_date < twoWeeksAgo ? c.start_date : twoWeeksAgo;
+      // A year back, so weight trends and photos reach before the current challenge.
+      const yearAgo = toISODate(addDays(parseISO(now), -365));
+      const from = c && c.start_date < yearAgo ? c.start_date : yearAgo;
       const rows = await repo.getLogs(from, now);
       setLogs((prev) => {
         const next = { ...prev };
@@ -182,18 +186,21 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   // ---- saving --------------------------------------------------------------
 
-  const flush = useCallback(
-    (date: string) => {
+  /** Save a day's unsaved changes now; resolves once the database has them. */
+  const flushNow = useCallback(
+    async (date: string) => {
       const t = pending.current.get(date);
       if (t) clearTimeout(t);
       pending.current.delete(date);
       const fields = dirty.current.get(date);
       dirty.current.delete(date);
       const log = logsRef.current[date];
-      if (log && fields?.size) repo.saveLog(log, [...fields]).catch(fail);
+      if (log && fields?.size) await repo.saveLog(log, [...fields]);
     },
-    [repo, fail],
+    [repo],
   );
+
+  const flush = useCallback((date: string) => void flushNow(date).catch(fail), [flushNow, fail]);
 
   const flushAll = useCallback(() => {
     [...pending.current.keys()].forEach(flush);
@@ -217,6 +224,37 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       pending.current.set(date, setTimeout(() => flush(date), 600));
     },
     [flush],
+  );
+
+  // ---- photos --------------------------------------------------------------
+
+  const setPhoto = useCallback(
+    async (date: string, file: Blob) => {
+      const { full, thumb } = await preparePhoto(file);
+      const path = await repo.uploadPhoto(date, full, thumb);
+      const old = (logsRef.current[date] ?? emptyLog(date)).photo_path;
+      updateLog(date, (l) => ({ ...l, photo_path: path }));
+      try {
+        await flushNow(date);
+      } catch (e) {
+        updateLog(date, (l) => ({ ...l, photo_path: old ?? null }));
+        await repo.deletePhoto(path).catch(() => {});
+        throw e;
+      }
+      if (old && old !== path) await repo.deletePhoto(old).catch(() => {});
+    },
+    [repo, updateLog, flushNow],
+  );
+
+  const removePhoto = useCallback(
+    async (date: string) => {
+      const old = logsRef.current[date]?.photo_path;
+      if (!old) return;
+      updateLog(date, (l) => ({ ...l, photo_path: null }));
+      await flushNow(date);
+      await repo.deletePhoto(old);
+    },
+    [repo, updateLog, flushNow],
   );
 
   // ---- health --------------------------------------------------------------
@@ -463,8 +501,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     health,
     error,
     clearError: () => setError(null),
+    reportError: fail,
     logFor,
     updateLog,
+    setPhoto,
+    removePhoto,
     updateProfile,
     regenerateSyncToken,
     exportData,

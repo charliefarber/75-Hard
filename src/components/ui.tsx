@@ -179,17 +179,43 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
   );
 }
 
-export function Toast({ message, onClose }: { message: string; onClose: () => void }) {
+export function Toast({
+  message,
+  onClose,
+  action,
+  tone = 'error',
+}: {
+  message: string;
+  onClose: () => void;
+  /** e.g. Undo. */
+  action?: { label: string; onClick: () => void };
+  tone?: 'error' | 'info';
+}) {
+  const act = useRef(action);
+  act.current = action;
   useEffect(() => {
-    const t = setTimeout(onClose, 5000);
+    const t = setTimeout(onClose, act.current ? 6000 : 5000);
     return () => clearTimeout(t);
   }, [message, onClose]);
   return (
-    <div className="toast" role="alert">
+    <div className="toast" role={tone === 'error' ? 'alert' : 'status'}>
       <span style={{ flex: 1 }}>{message}</span>
-      <button className="link-btn" style={{ color: 'var(--mint)' }} onClick={onClose}>
-        OK
-      </button>
+      {action ? (
+        <button
+          className="link-btn"
+          style={{ color: 'var(--mint)' }}
+          onClick={() => {
+            action.onClick();
+            onClose();
+          }}
+        >
+          {action.label}
+        </button>
+      ) : (
+        <button className="link-btn" style={{ color: 'var(--mint)' }} onClick={onClose}>
+          OK
+        </button>
+      )}
     </div>
   );
 }

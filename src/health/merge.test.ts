@@ -22,7 +22,7 @@ describe('mergeHealthDay', () => {
     expect(out.water_ml).toBe(3000);
   });
 
-  it('fills empty workout slots with long-enough Health workouts, once', () => {
+  it('adds each Health workout once, any length', () => {
     const h = {
       date: '2026-10-11',
       workouts: [
@@ -31,9 +31,10 @@ describe('mergeHealthDay', () => {
       ],
     };
     const once = mergeHealthDay(emptyLog('2026-10-11'), h, p);
-    expect(once.workouts[0]).toMatchObject({ done: true, minutes: 52, type: 'Running', outdoor: true, source: 'health' });
-    expect(once.workouts[1].done).toBe(false);
+    expect(once.workouts).toHaveLength(2);
+    expect(once.workouts[0]).toMatchObject({ activity: 'run', minutes: 52, source: 'health', healthId: '2026-10-11T07:00:00Z' });
+    expect(once.workouts[1]).toMatchObject({ activity: 'yoga_vinyasa', minutes: 20 });
     const twice = mergeHealthDay(once, h, p);
-    expect(twice.workouts[1].done).toBe(false);
+    expect(twice.workouts).toHaveLength(2);
   });
 });

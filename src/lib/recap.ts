@@ -1,5 +1,7 @@
 import { addDays, parseISO, startOfWeek } from 'date-fns';
 import type { DailyLog, Profile } from '../data/types';
+import { workoutGoal } from '../data/types';
+import { bodyStats, dayBurned } from './body';
 import type { ChallengeSummary, DayState } from './challenge';
 import { toISODate } from './challenge';
 import { stageFor, STAGES } from './pet';
@@ -20,7 +22,8 @@ export interface WeekRecap {
   perfect: boolean;
   steps: { total: number; goal: number; bestDay: string | null; bestSteps: number };
   water: { avgMl: number; daysHit: number };
-  workouts: { logged: number; possible: number; minutes: number };
+  /** Workout minutes this week vs. what the daily goal adds up to, and active calories burned. */
+  workouts: { minutes: number; goalMinutes: number; kcal: number; sessions: number };
   readingDays: number;
   /** Stage names at the start and end of the week, if the pet evolved. */
   evolvedTo: string | null;
@@ -35,7 +38,8 @@ export function weekRecap(
   monday: string,
   logs: Record<string, DailyLog>,
   summary: ChallengeSummary,
-  profile: Pick<Profile, 'step_goal' | 'water_goal_ml' | 'workout_minutes' | 'reading_goal_pages'>,
+  profile: Pick<Profile, 'step_goal' | 'water_goal_ml' | 'workout_minutes' | 'reading_goal_pages'> &
+    Partial<Pick<Profile, 'workout_goal_minutes' | 'height_cm' | 'sex' | 'birthday'>>,
   today: string,
 ): WeekRecap {
   const byDate = new Map(summary.timeline.map((t) => [t.date, t]));
@@ -53,8 +57,9 @@ export function weekRecap(
   let bestSteps = 0;
   let waterSum = 0;
   let waterHit = 0;
-  let workoutsLogged = 0;
+  let sessions = 0;
   let minutes = 0;
+  let kcal = 0;
   let readingDays = 0;
   for (const d of played) {
     const l = logs[d];
@@ -68,11 +73,10 @@ export function weekRecap(
     waterSum += l.water_ml;
     if (l.water_ml >= profile.water_goal_ml) waterHit++;
     for (const w of l.workouts) {
-      if (w.done) {
-        workoutsLogged++;
-        minutes += w.minutes || 0;
-      }
+      sessions++;
+      minutes += w.minutes || 0;
     }
+    kcal += dayBurned(l, bodyStats(profile, logs, d));
     if (l.pages_read >= profile.reading_goal_pages) readingDays++;
   }
 
@@ -100,7 +104,7 @@ export function weekRecap(
     perfect,
     steps: { total, goal: profile.step_goal * 7, bestDay, bestSteps },
     water: { avgMl: inPlay ? Math.round(waterSum / inPlay) : 0, daysHit: waterHit },
-    workouts: { logged: workoutsLogged, possible: inPlay * 2, minutes },
+    workouts: { minutes, goalMinutes: inPlay * workoutGoal(profile), kcal, sessions },
     readingDays,
     evolvedTo,
     totalCompleted: after,

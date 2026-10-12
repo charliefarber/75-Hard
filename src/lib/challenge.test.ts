@@ -8,8 +8,9 @@ function perfect(date: string): DailyLog {
   return {
     ...emptyLog(date),
     workouts: [
-      { done: true, minutes: 45, type: 'Run', outdoor: true },
-      { done: true, minutes: 50, type: 'Strength', outdoor: false },
+      { id: 'a', activity: 'pilates_reformer', minutes: 45, intensity: 'normal' },
+      { id: 'b', activity: 'weights', minutes: 30, intensity: 'hard' },
+      { id: 'c', activity: 'stair_stepper', minutes: 15, intensity: 'normal' },
     ],
     water_ml: 3800,
     pages_read: 10,
@@ -38,16 +39,24 @@ describe('tasks', () => {
     expect(isDayComplete(perfect('2026-10-11'), profile)).toBe(true);
   });
 
-  it('workouts can be indoors or outdoors', () => {
+  it('any mix of workouts counts once they add up to 90 minutes', () => {
     const l = perfect('2026-10-11');
-    l.workouts[0].outdoor = false;
+    l.workouts = [{ id: 'x', activity: 'run', minutes: 90, intensity: 'light' }];
     expect(isDayComplete(l, profile)).toBe(true);
   });
 
-  it('needs workouts to be long enough', () => {
+  it('needs the full 90 minutes, and says how many are left', () => {
     const l = perfect('2026-10-11');
-    l.workouts[1].minutes = 30;
+    l.workouts[2].minutes = 10;
     expect(isDayComplete(l, profile)).toBe(false);
+    expect(taskStatuses(l, profile)[0]).toMatchObject({ id: 'workouts', done: false, hint: '5 min to go' });
+  });
+
+  it('uses her own daily goal when she sets one', () => {
+    const l = perfect('2026-10-11');
+    l.workouts = [{ id: 'x', activity: 'walk', minutes: 60, intensity: 'normal' }];
+    expect(isDayComplete(l, { ...profile, workout_goal_minutes: 60 })).toBe(true);
+    expect(isDayComplete(l, { ...profile, workout_goal_minutes: 90 })).toBe(false);
   });
 
   it('steps never fail a day', () => {

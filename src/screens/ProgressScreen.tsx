@@ -8,6 +8,13 @@ import { RecapSheet } from '../components/Recap';
 import { mondayOf } from '../lib/recap';
 import { IconCalendarCheck, IconChevron } from '../components/Icons';
 import { tap } from '../lib/haptics';
+import { WeightCard } from '../components/WeightChart';
+import { PhotosCard } from '../components/PhotosCard';
+import { PhotoViewer } from '../components/PhotoViewer';
+import { WeightSheet } from '../components/CheckIn';
+import { photoDays } from '../lib/photos';
+import { latestWeight, weighIns, weightTrend, weightUnitFor } from '../lib/body';
+import '../styles/log.css';
 
 const CELL: Record<string, { bg: string; fg: string; border: string }> = {
   complete: { bg: 'var(--green)', fg: '#fff', border: 'transparent' },
@@ -17,12 +24,14 @@ const CELL: Record<string, { bg: string; fg: string; border: string }> = {
 };
 
 export function ProgressScreen({ openDay }: { openDay: (date: string) => void }) {
-  const { profile, challenge, logs, today, history } = useApp();
+  const { profile, challenge, logs, today, history, updateLog, updateProfile, removePhoto, reportError } = useApp();
   const summary = useMemo(
     () => (challenge && profile ? summarise(challenge, logs, profile, today) : null),
     [challenge, logs, profile, today],
   );
   const [recap, setRecap] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<null | { index: number; compare: boolean }>(null);
+  const [weighing, setWeighing] = useState(false);
   if (!profile || !challenge || !summary) return null;
 
   const attempt = history.findIndex((c) => c.id === challenge.id) + 1 || history.length;
@@ -56,6 +65,11 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
   const chartMax = Math.max(profile.step_goal * 1.4, ...sw.days.map((x) => x.steps));
   const waterDays = last7.filter((x) => x.water >= profile.water_goal_ml).length;
   const past = history.filter((c) => c.status !== 'active').reverse();
+  const unit = weightUnitFor(profile.weight_unit);
+  const photos = photoDays(logs, (d) => byDate.get(d)?.day ?? null);
+  const todayKg = logs[today]?.weight_kg ?? null;
+  const lastBefore = latestWeight(logs, toISODate(addDays(parseISO(today), -1)));
+  const trend = weightTrend(weighIns(logs));
 
   return (
     <div className="screen page-pad">
@@ -159,6 +173,14 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
         </div>
       </section>
 
+      <WeightCard logs={logs} unit={unit} today={today} onLog={() => setWeighing(true)} />
+
+      <PhotosCard
+        photos={photos}
+        onOpen={(index) => setViewer({ index, compare: false })}
+        onCompare={() => setViewer({ index: photos.length - 1, compare: true })}
+      />
+
       <section className="card">
         <div className="card-head" style={{ alignItems: 'baseline' }}>
           <h2 className="card-title">Steps this week</h2>
@@ -238,6 +260,36 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
         </>
       )}
       {recap && <RecapSheet open monday={recap} onClose={() => setRecap(null)} />}
+      {viewer && photos.length > 0 && (
+        <PhotoViewer
+          photos={photos}
+          startIndex={viewer.index}
+          startCompare={viewer.compare}
+          onClose={() => setViewer(null)}
+          onDelete={async (d) => {
+            try {
+              await removePhoto(d);
+            } catch (e) {
+              reportError(e);
+            }
+          }}
+        />
+      )}
+      <WeightSheet
+        open={weighing}
+        date={today}
+        isToday
+        current={typeof todayKg === 'number' ? todayKg : null}
+        last={lastBefore}
+        avg={trend.length ? trend[trend.length - 1].avg : null}
+        unit={unit}
+        onUnit={(u) => updateProfile({ weight_unit: u })}
+        onSave={(kg) => {
+          updateLog(today, (l) => ({ ...l, weight_kg: kg }));
+          setWeighing(false);
+        }}
+        onClose={() => setWeighing(false)}
+      />
     </div>
   );
 }

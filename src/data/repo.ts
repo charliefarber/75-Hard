@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { AuthUser, Challenge, DailyLog, Profile } from './types';
 import { normaliseLog } from './types';
+import { thumbPath } from '../lib/photos';
 
 /**
  * Everything the app needs from a backend. Two implementations:
@@ -36,6 +37,12 @@ export interface Repo {
   saveLog(log: DailyLog, fields?: (keyof DailyLog)[]): Promise<void>;
   /** Save many whole days at once (used when ticking off days done before signing up). */
   saveLogs(logs: DailyLog[]): Promise<void>;
+
+  /** Store a day's progress photo (already shrunk, see lib/photos.ts) and return its path. */
+  uploadPhoto(date: string, full: Blob, thumb: Blob): Promise<string>;
+  /** Short-lived links for showing photos, by path. `thumb` for the small gallery version. */
+  photoUrls(paths: string[], thumb?: boolean): Promise<Record<string, string>>;
+  deletePhoto(path: string): Promise<void>;
 }
 
 export interface DataExport {
@@ -44,6 +51,8 @@ export interface DataExport {
   profile: Omit<Profile, 'health_sync_token'>;
   challenges: Challenge[];
   daily_logs: DailyLog[];
+  /** Progress photos are listed by day; the photos themselves can be saved from the app. */
+  progress_photos: { date: string; file: string }[];
 }
 
 /** Profile fields the app may change (the database only allows these too; see 0009_security.sql). */
@@ -58,7 +67,19 @@ const PROFILE_EDITABLE = [
   'timezone',
   'birthday',
   'birthday_pass_year',
+  'workout_goal_minutes',
+  'height_cm',
+  'sex',
+  'weight_unit',
+  'workout_favorites',
 ] as const;
+
+const PHOTO_BUCKET = 'progress-photos';
+/** Signed photo links last an hour; the app re-signs before they run out. */
+export const PHOTO_URL_SECONDS = 3600;
+
+const photoList = (logs: DailyLog[]) =>
+  logs.filter((l) => l.photo_path).map((l) => ({ date: l.log_date, file: l.photo_path!.split('/').pop()! }));
 
 const ALL_DATES: [string, string] = ['1900-01-01', '2999-12-31'];
 
@@ -95,6 +116,13 @@ export function dbError(err: DbError): Error {
 function check<T>(res: { data: T; error: DbError | null }): T {
   if (res.error) throw dbError(res.error);
   return res.data;
+}
+
+function storageError(err: { message: string }): Error {
+  if (/bucket not found/i.test(err.message))
+    return new Error('Photo storage isn’t set up yet. In Supabase’s SQL Editor, run supabase/migrations/0011_workouts_weight_photos.sql, then try again.');
+  if (/exceeded the maximum allowed size|payload too large/i.test(err.message)) return new Error('That photo is too big to upload.');
+  return new Error(err.message);
 }
 
 export type ChallengePatch = Pick<Partial<Challenge>, 'pet_name' | 'treat_dates' | 'pet_style' | 'start_date' | 'credited_days'>;
@@ -193,10 +221,13 @@ export class SupabaseRepo implements Repo {
       profile: withoutToken(profile),
       challenges,
       daily_logs: logs.sort((a, b) => a.log_date.localeCompare(b.log_date)),
+      progress_photos: photoList(logs),
     };
   }
 
   async deleteAccount() {
+    // Photos first: they live in file storage, which deleting the account's rows doesn't reach.
+    await this.deleteAllPhotos();
     const { error } = await this.sb.rpc('delete_my_account');
     if (error) throw dbError(error);
     // The account is gone on the server, so just clear this device's session.
@@ -265,6 +296,55 @@ export class SupabaseRepo implements Repo {
     check(await this.sb.from('daily_logs').upsert(logs.map((l) => ({ ...l, user_id: uid })), { onConflict: 'user_id,log_date' }));
   }
 
+  private photos() {
+    return this.sb.storage.from(PHOTO_BUCKET);
+  }
+
+  async uploadPhoto(date: string, full: Blob, thumb: Blob) {
+    // A new name each time, so a replaced photo never shows a stale cached copy.
+    const path = `${this.uid()}/${date}-${Date.now().toString(36)}.jpg`;
+    const opts = { contentType: 'image/jpeg', cacheControl: '31536000', upsert: false };
+    const a = await this.photos().upload(path, await full.arrayBuffer(), opts);
+    if (a.error) throw storageError(a.error);
+    const b = await this.photos().upload(thumbPath(path), await thumb.arrayBuffer(), opts);
+    if (b.error) {
+      await this.photos().remove([path]);
+      throw storageError(b.error);
+    }
+    return path;
+  }
+
+  async photoUrls(paths: string[], thumb = false) {
+    const out: Record<string, string> = {};
+    if (!paths.length) return out;
+    const keys = paths.map((p) => (thumb ? thumbPath(p) : p));
+    const { data, error } = await this.photos().createSignedUrls(keys, PHOTO_URL_SECONDS);
+    if (error) throw storageError(error);
+    data.forEach((d, i) => {
+      if (d.signedUrl) out[paths[i]] = d.signedUrl;
+    });
+    return out;
+  }
+
+  async deletePhoto(path: string) {
+    const { error } = await this.photos().remove([path, thumbPath(path)]);
+    if (error) throw storageError(error);
+  }
+
+  private async deleteAllPhotos() {
+    const folder = this.uid();
+    for (let round = 0; round < 50; round++) {
+      const { data, error } = await this.photos().list(folder, { limit: 100 });
+      if (error) {
+        if (/bucket not found/i.test(error.message)) return; // photos were never set up
+        throw storageError(error);
+      }
+      if (!data.length) return;
+      const { error: e2 } = await this.photos().remove(data.map((o) => `${folder}/${o.name}`));
+      if (e2) throw storageError(e2);
+    }
+    throw new Error('Couldn’t delete all your progress photos. Try again.');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -287,6 +367,8 @@ const defaultProfile = (): Profile => ({
   step_goal: 10000,
   calorie_goal: 1800,
   workout_minutes: 45,
+  workout_goal_minutes: 90,
+  workout_favorites: [],
   reading_goal_pages: 10,
   steps_required: true,
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London',
@@ -381,10 +463,12 @@ export class LocalRepo implements Repo {
       profile: withoutToken(s.profile),
       challenges: s.challenges,
       daily_logs: Object.values(s.logs).map(normaliseLog).sort((a, b) => a.log_date.localeCompare(b.log_date)),
+      progress_photos: photoList(Object.values(s.logs)),
     };
   }
 
   async deleteAccount() {
+    await photoStore('clear').catch(() => {});
     try {
       localStorage.removeItem(KEY);
     } catch {
@@ -441,6 +525,60 @@ export class LocalRepo implements Repo {
   async saveLogs(logs: DailyLog[]) {
     this.mutate((s) => logs.forEach((l) => (s.logs[l.log_date] = l)));
   }
+
+  // Photos are too big for localStorage, so they go in the browser's IndexedDB.
+  private urls = new Map<string, string>();
+
+  async uploadPhoto(date: string, full: Blob, thumb: Blob) {
+    const path = `local/${date}-${Date.now().toString(36)}.jpg`;
+    await photoStore('put', path, full);
+    await photoStore('put', thumbPath(path), thumb);
+    return path;
+  }
+
+  async photoUrls(paths: string[], thumb = false) {
+    const out: Record<string, string> = {};
+    for (const p of paths) {
+      const key = thumb ? thumbPath(p) : p;
+      let url = this.urls.get(key);
+      if (!url) {
+        const blob = await photoStore('get', key);
+        if (!(blob instanceof Blob)) continue;
+        url = URL.createObjectURL(blob);
+        this.urls.set(key, url);
+      }
+      out[p] = url;
+    }
+    return out;
+  }
+
+  async deletePhoto(path: string) {
+    for (const key of [path, thumbPath(path)]) {
+      await photoStore('delete', key);
+      const url = this.urls.get(key);
+      if (url) URL.revokeObjectURL(url);
+      this.urls.delete(key);
+    }
+  }
+}
+
+function photoStore(op: 'get' | 'put' | 'delete' | 'clear', key?: string, value?: Blob): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') return reject(new Error('Photos can’t be saved in this browser.'));
+    const open = indexedDB.open('seventyfive-photos', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('photos');
+    open.onerror = () => reject(open.error ?? new Error('Photos can’t be saved in this browser.'));
+    open.onsuccess = () => {
+      const db = open.result;
+      const tx = db.transaction('photos', op === 'get' ? 'readonly' : 'readwrite');
+      const store = tx.objectStore('photos');
+      const req =
+        op === 'get' ? store.get(key!) : op === 'put' ? store.put(value!, key!) : op === 'delete' ? store.delete(key!) : store.clear();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+      tx.oncomplete = () => db.close();
+    };
+  });
 }
 
 export function createRepo(preferLocal = false): Repo {
