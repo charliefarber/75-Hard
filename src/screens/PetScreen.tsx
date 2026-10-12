@@ -245,7 +245,18 @@ export function PetScreen() {
           </div>
           <label className="field">
             Name
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={24} placeholder="Mochi" />
+            <input
+              className="input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={24}
+              placeholder="Mochi"
+              autoCapitalize="words"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="done"
+            />
           </label>
           <button className="btn btn-primary btn-block" type="submit">
             Save

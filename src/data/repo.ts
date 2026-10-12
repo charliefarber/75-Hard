@@ -42,8 +42,25 @@ export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefin
 export const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 export const supabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 
-function check<T>(res: { data: T; error: { message: string } | null }): T {
-  if (res.error) throw new Error(res.error.message);
+type DbError = { message: string; code?: string };
+
+/**
+ * Turn a Supabase error into something readable. A missing column means a migration
+ * hasn't been run (or the API hasn't picked it up yet): say exactly which, and how to fix it.
+ */
+export function dbError(err: DbError): Error {
+  const m =
+    err.message.match(/Could not find the '(\w+)' column/) ??
+    (err.code === '42703' ? err.message.match(/column (?:"?\w+"?\.)?"?(\w+)"? does not exist/) : null);
+  if (m)
+    return new Error(
+      `The database is missing the “${m[1]}” column. In Supabase’s SQL Editor, run supabase/migrations/0005_catch_up.sql (safe to run again), then try once more.`,
+    );
+  return new Error(err.message);
+}
+
+function check<T>(res: { data: T; error: DbError | null }): T {
+  if (res.error) throw dbError(res.error);
   return res.data;
 }
 
@@ -119,8 +136,6 @@ export class SupabaseRepo implements Repo {
   async updateProfile(patch: Partial<Profile>) {
     const { id: _id, health_sync_token: _t, ...rest } = patch;
     const res = await this.sb.from('profiles').update(rest).eq('id', this.uid()).select(PROFILE_COLUMNS).single();
-    if (res.error && /birthday/.test(res.error.message))
-      throw new Error('Saving birthdays needs a database update: run supabase/migrations/0004_birthday.sql in Supabase.');
     return check(res) as Profile;
   }
 
@@ -163,7 +178,7 @@ export class SupabaseRepo implements Repo {
       console.error('[75] active challenge exists but is not readable', { user: this.userId });
       throw new Error('You already have a challenge running, but it couldn’t be loaded. Try signing out and back in.');
     }
-    throw new Error(error.message);
+    throw dbError(error);
   }
 
   async endChallenge(id: string, status: 'reset' | 'completed', endedOn: string) {
@@ -172,11 +187,7 @@ export class SupabaseRepo implements Repo {
 
   async updateChallenge(id: string, patch: ChallengePatch) {
     const { error } = await this.sb.from('challenges').update(patch).eq('id', id);
-    if (error && /pet_style/.test(error.message))
-      throw new Error('Saving the sloth style needs a database update: run supabase/migrations/0003_pet_style.sql in Supabase.');
-    if (error && /pet_name|treat_dates/.test(error.message))
-      throw new Error('The pet needs a database update: run supabase/migrations/0002_pet.sql in Supabase.');
-    if (error) throw new Error(error.message);
+    if (error) throw dbError(error);
   }
 
   async getLogs(from: string, to: string) {
@@ -192,10 +203,7 @@ export class SupabaseRepo implements Repo {
   async saveLog(log: DailyLog, fields?: (keyof DailyLog)[]) {
     const row: Record<string, unknown> = { user_id: this.uid(), log_date: log.log_date };
     for (const k of fields ?? (Object.keys(log) as (keyof DailyLog)[])) row[k] = log[k];
-    const res = await this.sb.from('daily_logs').upsert(row, { onConflict: 'user_id,log_date' });
-    if (res.error && /birthday_pass/.test(res.error.message))
-      throw new Error('The birthday pass needs a database update: run supabase/migrations/0004_birthday.sql in Supabase.');
-    check(res);
+    check(await this.sb.from('daily_logs').upsert(row, { onConflict: 'user_id,log_date' }));
   }
   async saveLogs(logs: DailyLog[]) {
     if (!logs.length) return;

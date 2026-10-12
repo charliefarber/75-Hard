@@ -147,23 +147,29 @@ export function Stepper({
 export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
   const id = useId();
   const ref = useRef<HTMLDivElement>(null);
+  // Keep the latest onClose without re-running the open/close effect. Parents often pass a
+  // new arrow function every render; re-running would steal focus from the text box on each
+  // keystroke (on iPhone the keyboard closes and typing seems not to work).
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
-    ref.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    // Focus the sheet only if nothing inside it (e.g. an autoFocus input) already has focus.
+    if (!ref.current?.contains(document.activeElement)) ref.current?.focus({ preventScroll: true });
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current();
     window.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
     return () => {
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';
-      prev?.focus?.();
+      prev?.focus?.({ preventScroll: true });
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <>
-      <div className="sheet-backdrop" onClick={onClose} />
+      <div className="sheet-backdrop" onClick={() => closeRef.current()} />
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={id} ref={ref} tabIndex={-1}>
         <div className="sheet-grip" />
         <h2 id={id}>{title}</h2>

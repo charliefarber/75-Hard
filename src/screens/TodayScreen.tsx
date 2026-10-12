@@ -510,7 +510,6 @@ export function TodayScreen({
         <section className="card list" aria-label="Daily habits">
           <DietRow
             title={`Read ${profile.reading_goal_pages} pages`}
-            sub="Non-fiction"
             checked={log.pages_read >= profile.reading_goal_pages}
             onChange={(v) => set({ pages_read: v ? profile.reading_goal_pages : 0 })}
           />
@@ -622,7 +621,7 @@ function Stat({ label, value, icon }: { label: string; value: string; icon?: boo
   );
 }
 
-function DietRow({ title, sub, checked, onChange }: { title: string; sub: string; checked: boolean; onChange: (v: boolean) => void }) {
+function DietRow({ title, sub, checked, onChange }: { title: string; sub?: string; checked: boolean; onChange: (v: boolean) => void }) {
   return <ToggleRow title={title} sub={sub} checked={checked} onChange={onChange} />;
 }
 
