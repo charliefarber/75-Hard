@@ -439,8 +439,8 @@ function ShortcutSheet({ open, onClose, token }: { open: boolean; onClose: () =>
   return (
     <Sheet open={open} onClose={onClose} title="Sync Apple Health with a Shortcut">
       <p style={{ margin: 0, color: 'var(--muted)', lineHeight: 1.5, fontSize: 14 }}>
-        Until this is an App Store app, an iPhone Shortcut can send steps and Lifesum calories from Apple Health. It sends the last 3
-        days each time, so late-evening steps and days the Shortcut didn’t run still get filled in. Set it up once and it runs on its own.
+        Until this is an App Store app, an iPhone Shortcut can send steps and Lifesum calories from Apple Health. It sends the last 7
+        days each time, so late-evening steps and days the Shortcut didn’t run still get filled in, and each run corrects those days. Set it up once and it runs on its own.
       </p>
       <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Step n={1}>
@@ -448,7 +448,7 @@ function ShortcutSheet({ open, onClose, token }: { open: boolean; onClose: () =>
         </Step>
         <Step n={2}>
           In the <strong>Shortcuts</strong> app, make a new shortcut. Add <strong>Find Health Samples</strong>: Type <strong>Steps</strong>,
-          Start Date <strong>is in the last 3 days</strong>, Group by <strong>Day</strong>.
+          Start Date <strong>is in the last 7 days</strong>, Group by <strong>Day</strong>.
         </Step>
         <Step n={3}>
           Add <strong>Repeat with Each</strong> over those samples. Inside the repeat, add <strong>Format Date</strong> of{' '}
