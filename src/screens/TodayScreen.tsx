@@ -9,6 +9,7 @@ import { IconCheck, IconFlame, IconGrid, IconNote, IconRefresh, IconUndo } from 
 import { success, tap } from '../lib/haptics';
 import { Celebration } from '../components/Celebration';
 import { BirthdayCake } from '../components/BirthdayCake';
+import { RecapSheet, markRecapSeen, pendingRecapWeek } from '../components/Recap';
 import { birthdayPass } from '../lib/birthday';
 import { PetSprite } from '../components/PetSprite';
 import { MOODS, STAGES, petState, stageFor } from '../lib/pet';
@@ -29,6 +30,14 @@ export function TodayScreen({
 }) {
   const { profile, challenge, logs, logFor, updateLog, today, health, syncHealth, applyBirthdayPass, undoBirthdayPass } = useApp();
   const [bdayIntro, setBdayIntro] = useState(false);
+  // Weekly recap: last week's, once, on the first open of a new week.
+  const [recapWeek, setRecapWeek] = useState<string | null>(null);
+  const [recapChecked, setRecapChecked] = useState(false);
+  useEffect(() => {
+    if (!challenge || recapChecked) return;
+    setRecapChecked(true);
+    setRecapWeek(pendingRecapWeek(challenge.start_date, today));
+  }, [challenge, today, recapChecked]);
   const [sheet, setSheet] = useState<null | { kind: 'workout'; index: number } | { kind: 'steps' } | { kind: 'calories' }>(null);
 
   const log = logFor(date);
@@ -67,7 +76,7 @@ export function TodayScreen({
   // Birthday pass: a week before her birthday, show the surprise once per year.
   const pass = profile ? birthdayPass(profile.birthday, profile.birthday_pass_year, today) : null;
   useEffect(() => {
-    if (!pass?.available) return;
+    if (!pass?.available || !recapChecked || recapWeek) return;
     const key = `seventyfive:bday-intro-${pass.year}`;
     try {
       if (!localStorage.getItem(key)) {
@@ -77,7 +86,7 @@ export function TodayScreen({
     } catch {
       /* storage unavailable */
     }
-  }, [pass?.available, pass?.year]);
+  }, [pass?.available, pass?.year, recapChecked, recapWeek]);
   const endParty = useCallback(() => setParty(null), []);
 
   if (!profile || !challenge || !summary) return null;
@@ -586,6 +595,16 @@ export function TodayScreen({
           Yay, got it
         </button>
       </Sheet>
+      {recapWeek && (
+        <RecapSheet
+          open
+          monday={recapWeek}
+          onClose={() => {
+            markRecapSeen(recapWeek);
+            setRecapWeek(null);
+          }}
+        />
+      )}
       {party && <Celebration title={party.title} subtitle={party.subtitle} onDone={endParty} />}
     </div>
   );

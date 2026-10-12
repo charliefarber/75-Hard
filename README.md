@@ -20,6 +20,10 @@ The progress picture is left out on purpose. There's also a notes box for each d
 
 **Missed days extend the challenge rather than restarting it.** A day only counts when every task is ticked off. A missed day just doesn't count: it shows as **+1** on the Progress grid, and the finish line moves back a day. The challenge ends on the 75th completed day. If a day was done but not logged, fill it in and it counts again. A manual **Restart at day 1** is still in Profile. Already partway through when signing up? Choose **Earlier**, pick the real start date, and optionally tick off every day so far. Any past day can be opened from the Progress calendar and filled in or changed (there's a one-tap "Tick everything off" for past days). The start date can be changed later in Profile.
 
+## Weekly recap
+
+The first time the app is opened in a new week, a "Your week" card sums up the last Monday–Sunday: days completed (with a dot per day), steps against the weekly goal, average water, workouts, reading, any perfect-week treat and any evolution. Every week can be revisited from Progress → Weekly recap.
+
 ## Birthday pass
 
 Everyone adds their birthday at sign-up (or in Profile). From a week before it until a month after, a **birthday pass** appears on Today: use it on any day and that day counts as complete (the pet gets cake). One per birthday, and it can be undone.

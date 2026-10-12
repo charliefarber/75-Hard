@@ -62,3 +62,6 @@ export const IconNote = (p: P) => (
 export const IconFlame = (p: P) => (
   <svg {...base(p)}><path d="M12 22c4 0 7-3 7-7 0-4-3-6-4-9-1 2-2 3-4 3 0-2-1-4-2-6-1 4-4 6-4 11 0 5 3 8 7 8z" /></svg>
 );
+export const IconCalendarCheck = (p: P) => (
+  <svg {...base(p)}><rect x="3" y="4" width="18" height="18" rx="3" /><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4" /></svg>
+);

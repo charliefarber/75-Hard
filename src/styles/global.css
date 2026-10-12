@@ -407,3 +407,6 @@ button.row { color: inherit; }
 .bday-flame { animation: flame 0.9s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: 50% 100%; }
 @keyframes flame { from { transform: scale(1, 1) rotate(-3deg); } to { transform: scale(0.85, 1.12) rotate(3deg); } }
 .bday-card { background: linear-gradient(135deg, #FFF0F5 0%, #FFF7E8 100%); border: 1.5px solid #F8D3E0; }
+
+/* Long sheets scroll; their contents must never squash to fit. */
+.sheet > * { flex-shrink: 0; }

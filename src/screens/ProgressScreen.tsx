@@ -1,9 +1,12 @@
 import type { CSSProperties } from 'react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { addDays, addMonths, format, getDay, getDaysInMonth, parseISO, startOfMonth } from 'date-fns';
 import { useApp } from '../data/AppData';
 import { CHALLENGE_LENGTH, summarise, toISODate, weekSteps } from '../lib/challenge';
 import { fmt } from '../components/ui';
+import { RecapSheet } from '../components/Recap';
+import { mondayOf } from '../lib/recap';
+import { IconCalendarCheck, IconChevron } from '../components/Icons';
 import { tap } from '../lib/haptics';
 
 const CELL: Record<string, { bg: string; fg: string; border: string }> = {
@@ -19,6 +22,7 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
     () => (challenge && profile ? summarise(challenge, logs, profile, today) : null),
     [challenge, logs, profile, today],
   );
+  const [recap, setRecap] = useState<string | null>(null);
   if (!profile || !challenge || !summary) return null;
 
   const attempt = history.findIndex((c) => c.id === challenge.id) + 1 || history.length;
@@ -71,6 +75,21 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
           <Tile value={`${pct}%`} label="of the way" />
         )}
       </div>
+
+      <button
+        className="card"
+        onClick={() => (tap(), setRecap(mondayOf(today) === mondayOf(challenge.start_date) ? mondayOf(today) : toISODate(addDays(parseISO(mondayOf(today)), -7))))}
+        style={{ border: 0, flexDirection: 'row', alignItems: 'center', gap: 14, textAlign: 'left' }}
+      >
+        <span className="icon-badge" style={{ background: 'var(--mint-tint)', color: 'var(--green-ink)' }}>
+          <IconCalendarCheck size={22} />
+        </span>
+        <span className="row-text">
+          <span className="row-title">Weekly recap</span>
+          <span className="row-sub">How your week went, every week</span>
+        </span>
+        <IconChevron size={18} style={{ color: '#9aa59d' }} />
+      </button>
 
       <section className="card">
         <div className="card-head">
@@ -218,6 +237,7 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
           </section>
         </>
       )}
+      {recap && <RecapSheet open monday={recap} onClose={() => setRecap(null)} />}
     </div>
   );
 }
