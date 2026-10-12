@@ -13,8 +13,8 @@ export const PET_STYLES: { id: PetStyle; label: string }[] = [
 /** The sloth grows as it evolves. */
 const STAGE_SCALE = [0.74, 0.8, 0.86, 0.92, 0.97, 1];
 
-export function petSrc(style: PetStyle, stage: number, mood: Mood | 'eating') {
-  return `./pet/${style}/${mood === 'eating' ? 'eating' : `${stage}-${mood}`}.webp`;
+export function petSrc(style: PetStyle, stage: number, mood: Mood | 'eating', hd = false) {
+  return `./pet/${hd ? 'hd/' : ''}${style}/${mood === 'eating' ? 'eating' : `${stage}-${mood}`}.webp`;
 }
 
 /**
@@ -30,6 +30,8 @@ export function PetSprite({
   eating = false,
   interactive = false,
   still = false,
+  hd = false,
+  shade = false,
   label,
 }: {
   style: PetStyle;
@@ -39,6 +41,10 @@ export function PetSprite({
   eating?: boolean;
   interactive?: boolean;
   still?: boolean;
+  /** Use the sharp, upscaled art (for big displays). Falls back to the standard art if missing. */
+  hd?: boolean;
+  /** Add a light layer shaped like the sloth, so scene lighting can move across it. */
+  shade?: boolean;
   label?: string;
 }) {
   const [boops, setBoops] = useState<number[]>([]);
@@ -46,7 +52,9 @@ export function PetSprite({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
 
-  const src = petSrc(style, stage, eating ? 'eating' : mood);
+  const key = eating ? 'eating' : mood;
+  const [hdFailed, setHdFailed] = useState(false);
+  const src = petSrc(style, stage, key, hd && !hdFailed);
   const showMood = !still && !eating;
 
   function boop() {
@@ -68,7 +76,10 @@ export function PetSprite({
       <span className="pet-shadow" />
       <div className={`pet-motion${squish ? ' pet-squish' : ''}`} onAnimationEnd={(e) => e.animationName === 'pet-squish' && setSquish(false)}>
         <div className="pet-breathe">
-          <img src={src} alt="" draggable={false} decoding="async" />
+          <span className="pet-img">
+            <img src={src} alt="" draggable={false} decoding="async" onError={() => hd && setHdFailed(true)} />
+            {shade && <span className="pet-light" style={{ WebkitMaskImage: `url(${src})`, maskImage: `url(${src})` }} />}
+          </span>
         </div>
       </div>
 

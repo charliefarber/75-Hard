@@ -1,0 +1,284 @@
+/* ---------- The sloth's world (Pet tab) ---------- */
+
+.world {
+  --tilt: 0;
+  position: relative;
+  height: clamp(380px, 60vh, 540px);
+  overflow: hidden;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  isolation: isolate;
+}
+
+/* Palettes. Far things are lighter and bluer (atmospheric perspective); near things are saturated. */
+.world-day {
+  --sky-top: #8fcdec; --sky-mid: #c4e6f3; --sky-low: #e9f5dc;
+  --sun: #fff3c4; --sun-glow: rgba(255, 240, 190, 0.55); --cloud: rgba(255, 255, 255, 0.92);
+  --hill-far: #b6d9b4; --tree: #6fae66; --trunk: #8a6a4a; --hill-mid: #8cc47a;
+  --grass-lit: #b5e08a; --grass: #86c65f; --grass-dark: #5e9e45; --earth: #9a7552; --earth-dark: #6e5038; --stone: #c9c2b4;
+  --grass-near: #4f8f3a; --flower: #f59ab3; --particle: rgba(255, 255, 240, 0.9);
+  --hud: #0d3b25; --hud-soft: rgba(13, 59, 37, 0.28);
+}
+.world-dawn {
+  --sky-top: #f6b98f; --sky-mid: #fbd9bb; --sky-low: #f3ead2;
+  --sun: #ffe0a8; --sun-glow: rgba(255, 196, 140, 0.55); --cloud: rgba(255, 236, 222, 0.9);
+  --hill-far: #d7c9b0; --tree: #7da868; --trunk: #8a6a4a; --hill-mid: #a3c27f;
+  --grass-lit: #cfe39a; --grass: #9ac76a; --grass-dark: #6c9f4a; --earth: #a07a55; --earth-dark: #74553a; --stone: #d8c9b2;
+  --grass-near: #5c8f40; --flower: #f7a6b8; --particle: rgba(255, 240, 220, 0.9);
+  --hud: #4a2a16; --hud-soft: rgba(74, 42, 22, 0.25);
+}
+.world-dusk {
+  --sky-top: #6f6aa8; --sky-mid: #e79a8c; --sky-low: #f6c89a;
+  --sun: #ffd08a; --sun-glow: rgba(255, 170, 110, 0.5); --cloud: rgba(255, 210, 200, 0.85);
+  --hill-far: #a98fa6; --tree: #5d8a58; --trunk: #6e4f3a; --hill-mid: #7aa064;
+  --grass-lit: #a9cf7c; --grass: #7cb35a; --grass-dark: #568540; --earth: #8a6448; --earth-dark: #5e4231; --stone: #bfae9e;
+  --grass-near: #436f33; --flower: #f39ab4; --particle: #ffe58a;
+  --hud: #ffffff; --hud-soft: rgba(255, 255, 255, 0.4);
+}
+.world-night {
+  --sky-top: #141f3f; --sky-mid: #263862; --sky-low: #3d527f;
+  --sun: transparent; --sun-glow: transparent; --cloud: rgba(120, 140, 190, 0.35);
+  --hill-far: #2c3f62; --tree: #2f5240; --trunk: #3a3030; --hill-mid: #36573f;
+  --grass-lit: #5f8e5a; --grass: #456f43; --grass-dark: #2f5233; --earth: #4f3d33; --earth-dark: #362a24; --stone: #6f7486;
+  --grass-near: #253f2a; --flower: #b98fc9; --particle: #fff2a0;
+  --hud: #ffffff; --hud-soft: rgba(255, 255, 255, 0.35);
+}
+
+.world-sky { position: absolute; inset: 0; background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 48%, var(--sky-low) 100%); z-index: -2; }
+
+/* Each depth layer moves a different amount when you drag (parallax). */
+.world-layer { position: absolute; inset: 0; pointer-events: none; will-change: transform; }
+.world-celestial > svg, .world-far > svg, .world-mid > svg, .world-near > svg { position: absolute; left: -12%; width: 124%; height: 100%; }
+/* Ground plane under everything, so the scene never shows sky below the hills. */
+.world-ground { position: absolute; left: 0; right: 0; bottom: 0; height: 30%; z-index: 0; pointer-events: none; background: linear-gradient(180deg, var(--hill-mid) 0%, var(--grass-dark) 100%); }
+.world-celestial { transform: translateX(calc(var(--tilt) * -6px)); }
+.world-clouds { transform: translateX(calc(var(--tilt) * -10px)); }
+.world-far { transform: translateX(calc(var(--tilt) * -16px)); filter: blur(1.2px); }
+.world-mid { transform: translateX(calc(var(--tilt) * -30px)); filter: blur(0.5px); }
+.world-near { transform: translateX(calc(var(--tilt) * -70px)); filter: blur(1.5px); z-index: 3; }
+.world-far svg, .world-mid svg { bottom: 18%; }
+.world-near svg { bottom: 0; }
+
+.cloud { position: absolute; width: 30%; height: auto; animation: cloud-drift 60s linear infinite; }
+.cloud-a { top: 9%; left: -20%; }
+.cloud-b { top: 20%; left: 30%; width: 22%; animation-duration: 85s; animation-delay: -40s; opacity: 0.8; }
+.cloud-c { top: 5%; left: 70%; width: 18%; animation-duration: 110s; animation-delay: -70s; opacity: 0.7; }
+@keyframes cloud-drift { from { transform: translateX(0); } to { transform: translateX(160vw); } }
+.world-overcast .world-sky, .world-storm .world-sky { filter: saturate(0.5) brightness(0.92); }
+.world-overcast .cloud, .world-storm .cloud { --cloud: rgba(180, 186, 196, 0.95); width: 46%; }
+.world-storm { filter: saturate(0.55); }
+.world-storm .world-celestial { opacity: 0; }
+
+.star { animation: twinkle 3.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+
+/* The sloth on its platform, sharp and in focus. */
+.world-stage { position: absolute; left: 0; right: 0; bottom: 13%; height: 72%; perspective: 900px; z-index: 2; }
+.world-platform { position: absolute; left: 50%; bottom: 0; width: min(78%, 330px); transform: translateX(calc(-50% + var(--tilt) * -8px)); overflow: visible; }
+.world-pet {
+  position: absolute; left: 50%; bottom: 12%;
+  transform: translateX(-50%) rotateY(calc(var(--tilt) * 22deg)) scaleX(calc(1 - (var(--tilt) * var(--tilt)) * 0.08));
+  transform-style: preserve-3d;
+}
+.world-pet .pet-button { transform: translateZ(0); }
+.world-pet .pet-shadow { background: rgba(10, 30, 15, 0.32); filter: blur(4px); bottom: 2%; }
+/* Light slides across the sloth as it turns: bright on the lit side, a touch of shade on the other. */
+.world-pet .pet-light {
+  background: linear-gradient(100deg, rgba(255, 252, 235, 0.55) 0%, rgba(255, 252, 235, 0) 38%, rgba(0, 0, 0, 0) 62%, rgba(20, 30, 50, 0.32) 100%);
+  background-size: 180% 100%;
+  background-position: calc(50% + var(--tilt) * 45%) 0;
+  mix-blend-mode: soft-light;
+}
+.world-night .world-pet .pet-light { background-image: linear-gradient(100deg, rgba(160, 190, 255, 0.35) 0%, transparent 40%, transparent 60%, rgba(5, 10, 30, 0.45) 100%); }
+.world-night .world-pet img { filter: brightness(0.86) saturate(0.9); }
+.world-dusk .world-pet img { filter: sepia(0.08) saturate(1.05); }
+
+/* Drifting pollen by day, fireflies at night. Bigger = nearer = softer focus. */
+.world-particles { position: absolute; inset: 0; pointer-events: none; z-index: 4; transform: translateX(calc(var(--tilt) * -50px)); }
+.world-particles span { position: absolute; border-radius: 50%; background: var(--particle); animation: particle-float 9s ease-in-out infinite; }
+.world-firefly span { box-shadow: 0 0 8px 2px rgba(255, 230, 120, 0.8); animation-name: firefly; }
+@keyframes particle-float {
+  0%, 100% { transform: translate(0, 0); opacity: 0.2; }
+  30% { opacity: 0.9; }
+  50% { transform: translate(14px, -26px); }
+  80% { opacity: 0.6; }
+}
+@keyframes firefly {
+  0%, 100% { transform: translate(0, 0); opacity: 0; }
+  20%, 60% { opacity: 1; }
+  50% { transform: translate(-18px, -20px); }
+  80% { opacity: 0.2; transform: translate(10px, -6px); }
+}
+
+.world-rain {
+  position: absolute; inset: 0; z-index: 4; pointer-events: none; opacity: 0.45;
+  background-image: repeating-linear-gradient(105deg, transparent 0 14px, rgba(220, 230, 255, 0.55) 14px 15px, transparent 15px 34px);
+  animation: rain 0.5s linear infinite;
+}
+@keyframes rain { to { background-position: -12px 34px; } }
+.world-sparkle .world-sky { filter: saturate(1.15); }
+
+/* Soft edges and a fade into the sheet below, so the scene feels like it continues. */
+.world-vignette {
+  position: absolute; inset: 0; pointer-events: none; z-index: 5;
+  background: radial-gradient(120% 80% at 50% 45%, transparent 60%, rgba(10, 25, 20, 0.18) 100%);
+}
+
+/* Arc + day count at the top, Pokémon GO style. */
+.world-top { position: absolute; left: 0; right: 0; top: 0; z-index: 6; padding-top: calc(var(--safe-top) + 12px); pointer-events: none; }
+.world-top button { pointer-events: auto; }
+
+/* A treat thrown in from below: rises, spins, shrinks into the distance, lands at the sloth. */
+.treat-throw {
+  position: absolute; left: 50%; bottom: -30%; z-index: 4; pointer-events: none;
+  animation: treat-throw 0.85s cubic-bezier(0.25, 0.7, 0.4, 1) forwards;
+  filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.25));
+}
+@keyframes treat-throw {
+  0% { transform: translate(-50%, 0) scale(1.6) rotate(0); opacity: 1; }
+  60% { transform: translate(-50%, -330%) scale(0.85) rotate(320deg); opacity: 1; }
+  100% { transform: translate(-50%, -250%) scale(0.5) rotate(400deg); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cloud, .star, .world-particles span, .world-rain { animation: none; }
+  .treat-throw { animation-duration: 0.2s; }
+}
+
+/* ---------- Evolution cinematic ---------- */
+.evo {
+  position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: radial-gradient(70% 55% at 50% 42%, #2d8a5c 0%, #0f4a2e 60%, #062616 100%);
+  color: #fff; animation: fade-in 0.5s ease; overflow: hidden;
+}
+.evo-stage { position: relative; width: min(72vw, 320px); aspect-ratio: 1; margin-top: -40px; }
+.evo-stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: 50% 100%; }
+/* Both forms as glowing white silhouettes, swapping faster and faster. */
+.evo-sil { filter: brightness(0) invert(1) drop-shadow(0 0 18px rgba(255, 255, 255, 0.9)); }
+.evo-old { animation: evo-old 3.9s ease-in forwards; }
+.evo-new { opacity: 0; animation: evo-new 3.9s ease-in forwards; }
+@keyframes evo-old {
+  0% { opacity: 1; filter: none; transform: scale(1); }
+  18% { opacity: 1; filter: brightness(0) invert(1) drop-shadow(0 0 18px #fff); }
+  30%, 40% { opacity: 1; } 35% { opacity: 0; }
+  48%, 55% { opacity: 1; } 51% { opacity: 0; }
+  60%, 64% { opacity: 1; } 62% { opacity: 0; }
+  68%, 71% { opacity: 1; } 69.5% { opacity: 0; }
+  74%, 76% { opacity: 1; } 75% { opacity: 0; }
+  79% { opacity: 1; } 80% { opacity: 0; } 82% { opacity: 1; } 83% { opacity: 0; } 85% { opacity: 1; } 86%, 100% { opacity: 0; transform: scale(1.06); }
+}
+@keyframes evo-new {
+  0%, 30% { opacity: 0; } 35% { opacity: 1; } 40% { opacity: 0; }
+  51% { opacity: 1; } 55% { opacity: 0; }
+  62% { opacity: 1; } 64% { opacity: 0; }
+  69.5% { opacity: 1; } 71% { opacity: 0; }
+  75% { opacity: 1; } 76% { opacity: 0; }
+  80% { opacity: 1; } 82% { opacity: 0; } 83% { opacity: 1; } 85% { opacity: 0; } 86%, 100% { opacity: 1; transform: scale(1.12); }
+}
+.evo-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+.evo-reveal .evo-flash { animation: evo-flash 0.9s ease-out; }
+@keyframes evo-flash { 0% { opacity: 1; } 100% { opacity: 0; } }
+.evo-final { animation: evo-pop 0.9s var(--ease); filter: drop-shadow(0 18px 24px rgba(0, 0, 0, 0.35)); }
+@keyframes evo-pop { 0% { transform: scale(1.15); } 60% { transform: scale(0.96); } 100% { transform: scale(1); } }
+.evo-rays {
+  position: absolute; width: 180vmax; height: 180vmax; left: 50%; top: 42%; transform: translate(-50%, -50%); opacity: 0;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 255, 255, 0.13) 0deg 8deg, transparent 8deg 22deg);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 55%); mask-image: radial-gradient(circle, #000 0%, transparent 55%);
+}
+.evo-glow .evo-rays { animation: evo-rays-in 3.9s ease-in forwards, evo-spin 20s linear infinite; }
+.evo-reveal .evo-rays { opacity: 1; animation: evo-spin 24s linear infinite; }
+@keyframes evo-rays-in { from { opacity: 0; } to { opacity: 0.8; } }
+@keyframes evo-spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+.evo-text { position: relative; text-align: center; padding: 18px 28px calc(var(--safe-bottom) + 24px); display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 420px; }
+.evo-text p { margin: 0; font-size: 21px; font-weight: 700; line-height: 1.35; }
+.evo-text strong { color: var(--mint); }
+.evo-text span { color: var(--mint-soft); font-weight: 600; }
+.evo-text .btn { margin-top: 10px; min-width: 180px; height: 52px; background: #fff; color: var(--forest); }
+.evo-reveal .evo-text { animation: evo-text-in 0.6s var(--ease) 0.4s both; }
+@keyframes evo-text-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .evo-rays, .evo-final, .evo-reveal .evo-flash { animation: none; }
+}
+
+/* ---------- Pet screen layout ---------- */
+.pet-screen { padding-top: 0; }
+
+.world-day-count { display: flex; align-items: baseline; justify-content: center; gap: 6px; color: var(--hud); }
+.world-day-count span { font-size: 16px; font-weight: 700; opacity: 0.85; }
+.world-day-count strong { font-size: 36px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; }
+.world-arc { position: absolute; left: 7%; width: 86%; top: calc(var(--safe-top) + 62px); overflow: visible; }
+.arc-track { fill: none; stroke: var(--hud-soft); stroke-width: 3; stroke-linecap: round; }
+.arc-fill { fill: none; stroke: var(--hud); stroke-width: 3.5; stroke-linecap: round; transition: stroke-dasharray 0.8s var(--ease); }
+.arc-dot { fill: #fff; stroke: var(--hud); stroke-width: 2; filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.9)); }
+.world-chip {
+  position: absolute; left: 50%; transform: translateX(-50%); top: calc(var(--safe-top) + 58px); white-space: nowrap;
+  border: 0; border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 700;
+  background: rgba(255, 255, 255, 0.92); color: var(--forest); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+.pet-sheet {
+  position: relative; z-index: 7; margin: -36px 12px 0; padding: 18px 18px 16px;
+  background: var(--surface); border-radius: 28px;
+  box-shadow: 0 -8px 28px rgba(10, 40, 20, 0.14);
+  display: flex; flex-direction: column; align-items: stretch; gap: 14px;
+}
+.pet-name {
+  align-self: center; display: inline-flex; align-items: center; gap: 8px; border: 0; background: none; padding: 2px 6px;
+  font-size: 30px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); max-width: 100%;
+}
+.pet-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pet-name svg { color: var(--faint); flex: none; }
+.pet-hp { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: -6px; }
+.pet-hp-bar { width: 62%; height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.pet-hp-bar span { display: block; height: 100%; border-radius: 4px; transition: width 0.8s var(--ease); }
+.pet-hp-label { font-size: 13px; font-weight: 700; color: var(--muted); }
+
+.pet-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 12px 0; }
+.pet-stats > div { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
+.pet-stats > div + div { border-left: 1px solid var(--line); }
+.pet-stats strong { font-size: 17px; font-weight: 800; }
+.pet-stats span { font-size: 12px; font-weight: 600; color: var(--muted); }
+
+.pet-goods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pet-goods > div { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; color: var(--ink-2); font-weight: 600; }
+.pet-goods strong { font-size: 17px; color: var(--ink); font-weight: 800; }
+
+.pet-pill {
+  position: relative; overflow: hidden; display: flex; align-items: center; height: 54px; border-radius: 27px; border: 0; padding: 0;
+  font-size: 16px; font-weight: 800; text-align: left; width: 100%;
+}
+.pet-pill-main { flex: 1; padding-left: 22px; position: relative; }
+.pet-pill-cost {
+  position: relative; display: inline-flex; align-items: center; gap: 6px; height: 40px; margin-right: 7px; padding: 0 16px;
+  border-radius: 20px; font-size: 14px; font-weight: 800;
+}
+.pet-pill-feed { background: linear-gradient(90deg, #46c37b, #1f8a4c); color: #fff; box-shadow: 0 6px 16px rgba(31, 138, 76, 0.3); transition: transform 0.15s; }
+.pet-pill-feed .pet-pill-cost { background: rgba(255, 255, 255, 0.92); color: var(--ink); }
+.pet-pill-feed:active:not(:disabled) { transform: scale(0.98); }
+.pet-pill-feed:disabled { background: var(--surface-2); color: var(--faint); box-shadow: none; opacity: 1; }
+.pet-pill-feed:disabled .pet-pill-cost { background: #fff; color: var(--faint); }
+.pet-pill-evolve { background: var(--surface-2); color: var(--ink-2); }
+.pet-pill-progress { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #d9f3e1, var(--mint-soft)); transition: width 0.8s var(--ease); }
+.pet-pill-evolve .pet-pill-cost { background: #fff; color: var(--green-ink); }
+
+.pet-line { margin: 0; text-align: center; font-size: 14px; line-height: 1.5; color: var(--ink-2); font-weight: 600; }
+
+.pet-chain-head { display: flex; flex-direction: column; gap: 2px; padding: 22px 20px 8px; }
+.pet-chain-head h2 { margin: 0; font-size: 20px; font-weight: 800; }
+.pet-chain-head span { font-size: 14px; color: var(--muted); font-weight: 600; }
+.pet-chain {
+  display: flex; align-items: center; gap: 4px; overflow-x: auto; padding: 4px 16px 10px;
+  scroll-snap-type: x proximity; scrollbar-width: none;
+}
+.pet-chain::-webkit-scrollbar { display: none; }
+.pet-chain-arrow { flex: none; color: #b5beb7; }
+.pet-chain-item {
+  flex: none; width: 96px; scroll-snap-align: center; border: 2px solid transparent; border-radius: 20px; background: var(--surface);
+  padding: 6px 4px 10px; display: flex; flex-direction: column; align-items: center; gap: 1px;
+}
+.pet-chain-item strong { font-size: 13px; font-weight: 800; }
+.pet-chain-item > span:last-child { font-size: 11px; color: var(--muted); font-weight: 600; }
+.pet-chain-item.is-current { border-color: var(--green); background: var(--mint-tint); }
+.pet-chain-item.is-shown:not(.is-current) { border-color: var(--line-strong); }
+.pet-chain-item:disabled { opacity: 1; cursor: default; }
+.pet-chain-hint { margin: 0; padding: 0 20px; font-size: 13px; color: var(--muted); }

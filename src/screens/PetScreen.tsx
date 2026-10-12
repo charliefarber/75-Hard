@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { useApp } from '../data/AppData';
 import { summarise } from '../lib/challenge';
 import { MOODS, STAGES, petState } from '../lib/pet';
 import { PET_STYLES, PetSprite, type PetStyle } from '../components/PetSprite';
 import { Sheet } from '../components/ui';
+import { PetWorld } from '../components/PetWorld';
+import { EvolutionSequence } from '../components/EvolutionSequence';
 import { BirthdayCake } from '../components/BirthdayCake';
 import { birthdayPass } from '../lib/birthday';
 import { success, tap } from '../lib/haptics';
@@ -18,11 +20,16 @@ const INTRO_KEY = 'seventyfive:pet-intro';
 export function PetScreen() {
   const { profile, challenge, logs, today, updateChallenge } = useApp();
   const [eating, setEating] = useState(false);
+  const [throwing, setThrowing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
   const [style, setStyle] = useState<PetStyle>('girl');
+  const [preview, setPreview] = useState<number | null>(null);
+  const [evo, setEvo] = useState<{ from: number; to: number } | null>(null);
+  const chainRef = useRef<HTMLDivElement>(null);
 
   const summary = useMemo(() => (challenge && profile ? summarise(challenge, logs, profile, today) : null), [challenge, logs, profile, today]);
+  const pet = useMemo(() => (summary && challenge ? petState(summary, challenge.treat_dates ?? [], today) : null), [summary, challenge, today]);
 
   useEffect(() => {
     if (!eating) return;
@@ -44,15 +51,35 @@ export function PetScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [challenge?.id]);
 
-  if (!profile || !challenge || !summary) return null;
+  // Evolved since she last looked? Play the evolution.
+  const stageIndex = pet?.stageIndex;
+  useEffect(() => {
+    if (!challenge || stageIndex === undefined) return;
+    const key = `seventyfive:seen-stage-${challenge.id}`;
+    try {
+      const seen = localStorage.getItem(key);
+      if (seen !== null && stageIndex > Number(seen)) setEvo({ from: Number(seen), to: stageIndex });
+      localStorage.setItem(key, String(stageIndex));
+    } catch {
+      /* storage unavailable */
+    }
+  }, [challenge, stageIndex]);
+
+  // Keep the current stage in view in the evolution chain.
+  useEffect(() => {
+    const el = chainRef.current?.querySelector<HTMLElement>('[aria-current="true"]');
+    el?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [stageIndex]);
+
+  if (!profile || !challenge || !summary || !pet) return null;
   const petName = challenge.pet_name || 'Mochi';
   const petStyle: PetStyle = challenge.pet_style ?? 'girl';
   const treats = challenge.treat_dates ?? [];
-  const pet = petState(summary, treats, today);
   const mood = MOODS[pet.mood];
   const canTreat = pet.treatsAvailable > 0 && pet.missedRun > 0 && !!pet.treatTarget;
-  const scene = pet.stageIndex >= 4 ? 'sunset' : 'forest';
   const bday = birthdayPass(profile.birthday, profile.birthday_pass_year, today);
+  const shownStage = preview ?? pet.stageIndex;
+  const day = Math.max(1, summary.currentDay);
 
   function openEditor() {
     setName(challenge?.pet_name || 'Mochi');
@@ -60,149 +87,194 @@ export function PetScreen() {
     setEditing(true);
   }
 
-  async function giveTreat() {
-    if (!pet.treatTarget) return;
+  function feed() {
+    if (!canTreat || throwing) return;
     tap();
-    setEating(true);
-    success();
-    await updateChallenge({ treat_dates: [...treats, pet.treatTarget] });
+    setPreview(null);
+    // Bring the scene into view first so she sees the throw.
+    const away = window.scrollY > 40;
+    if (away) window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => setThrowing(true), away ? 420 : 0);
   }
 
-  return (
-    <div className="screen page-pad">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', padding: '0 4px', gap: 8 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-          <h1 className="page-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {petName}
-          </h1>
-          <span className="card-sub" style={{ fontWeight: 700 }}>
-            {pet.stage.name} · {PET_STYLES.find((s) => s.id === petStyle)?.label}
-          </span>
-        </div>
-        <button className="btn btn-sm btn-soft" onClick={openEditor} style={{ marginBottom: 4 }}>
-          Edit
+  async function treatLanded() {
+    setThrowing(false);
+    setEating(true);
+    success();
+    if (pet?.treatTarget) await updateChallenge({ treat_dates: [...treats, pet.treatTarget] });
+  }
+
+  const arc = (
+    <>
+      <div className="world-day-count">
+        <span>Day</span>
+        <strong>{day}</strong>
+      </div>
+      <svg className="world-arc" viewBox="0 0 300 150" aria-hidden="true">
+        <path d="M14 146 A136 136 0 0 1 286 146" className="arc-track" pathLength={1} />
+        <path d="M14 146 A136 136 0 0 1 286 146" className="arc-fill" pathLength={1} strokeDasharray={`${pet.stageProgress} 1`} />
+        <circle
+          className="arc-dot"
+          r="6"
+          cx={150 - 136 * Math.cos(Math.PI * pet.stageProgress)}
+          cy={146 - 136 * Math.sin(Math.PI * pet.stageProgress)}
+        />
+      </svg>
+      {preview !== null && preview !== pet.stageIndex && (
+        <button className="world-chip" onClick={() => setPreview(null)}>
+          Showing {STAGES[preview].name}. Back to {petName}
         </button>
+      )}
+    </>
+  );
+
+  return (
+    <div className="screen pet-screen">
+      <PetWorld
+        style={petStyle}
+        stage={shownStage}
+        mood={preview !== null ? 'happy' : pet.mood}
+        eating={eating}
+        throwing={throwing}
+        onThrowLanded={treatLanded}
+        label={`${petName}, ${STAGES[shownStage].name}, ${mood.label}`}
+        top={arc}
+      />
+
+      <div className="pet-sheet">
+        <button className="pet-name" onClick={openEditor} aria-label={`${petName}. Edit name and sloth`}>
+          <span>{petName}</span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 20h4L19 9l-4-4L4 16z" />
+            <path d="M13.5 6.5l4 4" />
+          </svg>
+        </button>
+
+        <div className="pet-hp" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pet.fullness} aria-label={`Fullness: ${mood.label}`}>
+          <div className="pet-hp-bar">
+            <span style={{ width: `${pet.fullness}%`, background: fullnessColor(pet.fullness) }} />
+          </div>
+          <span className="pet-hp-label">{mood.label}</span>
+        </div>
+
+        <div className="pet-stats">
+          <div>
+            <strong>{STAGES[pet.stageIndex].name}</strong>
+            <span>Stage</span>
+          </div>
+          <div>
+            <strong>
+              {summary.streak} {summary.streak === 1 ? 'day' : 'days'}
+            </strong>
+            <span>Streak</span>
+          </div>
+          <div>
+            <strong>{summary.completedDays}</strong>
+            <span>Days done</span>
+          </div>
+        </div>
+
+        <div className="pet-goods">
+          <div>
+            <TreatIcon size={28} />
+            <span>
+              <strong>{pet.treatsAvailable}</strong> {pet.treatsAvailable === 1 ? 'treat' : 'treats'}
+            </span>
+          </div>
+          {bday?.available ? (
+            <div>
+              <BirthdayCake size={30} />
+              <span>
+                <strong>1</strong> birthday pass
+              </span>
+            </div>
+          ) : (
+            <div>
+              <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2l2.9 6.3 6.9.7-5.2 4.6 1.5 6.8L12 17l-6.1 3.4 1.5-6.8L2.2 9l6.9-.7z" fill="var(--gold)" />
+              </svg>
+              <span>
+                <strong>{pet.perfectWeeks.length}</strong> perfect {pet.perfectWeeks.length === 1 ? 'week' : 'weeks'}
+              </span>
+            </div>
+          )}
+        </div>
+
+        <button className="pet-pill pet-pill-feed" disabled={!canTreat || throwing || eating} onClick={feed}>
+          <span className="pet-pill-main">Feed {petName}</span>
+          <span className="pet-pill-cost">
+            <TreatIcon size={18} /> 1
+          </span>
+        </button>
+        <div
+          className="pet-pill pet-pill-evolve"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(pet.stageProgress * 100)}
+          aria-label={pet.next ? `Evolves into ${pet.next.name} in ${pet.daysToNext} days` : 'Fully evolved'}
+        >
+          <span className="pet-pill-progress" style={{ width: `${Math.round(pet.stageProgress * 100)}%` }} />
+          <span className="pet-pill-main">{pet.next ? `Evolve into ${pet.next.name}` : 'Fully evolved'}</span>
+          <span className="pet-pill-cost">{pet.next ? `${pet.daysToNext} ${pet.daysToNext === 1 ? 'day' : 'days'}` : 'Legend'}</span>
+        </div>
+
+        <p className="pet-line" role="status">
+          {eating
+            ? `Nom nom. ${petName} loved that treat!`
+            : canTreat
+              ? `${mood.line(petName)} A treat covers ${format(parseISO(pet.treatTarget!), 'EEEE')}.`
+              : summary.todayComplete
+                ? `${petName} is fed for today. Come back tomorrow.`
+                : mood.line(petName)}
+        </p>
       </div>
 
-      <section className={`pet-scene pet-scene-${scene}${pet.mood === 'starving' && !eating ? ' pet-scene-starving' : ''}`}>
-        <Scenery kind={scene} />
-        <PetSprite
-          style={petStyle}
-          stage={pet.stageIndex}
-          mood={eating ? 'ecstatic' : pet.mood}
-          eating={eating}
-          size={260}
-          interactive
-          label={`${petName}, ${pet.stage.name}, ${mood.label}`}
-        />
-        <p style={{ margin: '0 8px', textAlign: 'center', fontSize: 15, lineHeight: 1.45, color: 'var(--ink-2)', fontWeight: 600 }} role="status">
-          {eating ? `Nom nom. ${petName} loved that treat!` : mood.line(petName)}
-        </p>
-      </section>
-
-      <section className="card" style={{ gap: 10 }}>
-        <div className="card-head">
-          <span className="row-title">Fullness</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: fullnessColor(pet.fullness) }}>{mood.label}</span>
-        </div>
-        <div className="meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pet.fullness} aria-label="Fullness">
-          <span style={{ width: `${pet.fullness}%`, background: fullnessColor(pet.fullness) }} />
-        </div>
-        <span className="card-sub">
-          {summary.todayComplete
-            ? 'Fed for today. Come back tomorrow.'
-            : pet.missedRun === 0
-              ? 'Finish today’s tasks to feed them.'
-              : `${pet.missedRun} missed ${pet.missedRun === 1 ? 'day' : 'days'} in a row. Finishing today fills them back up.`}
-        </span>
-      </section>
-
-      <section className="card" style={{ gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <span className="icon-badge" style={{ background: '#FFF1DC' }}>
-            <TreatIcon size={26} />
-          </span>
-          <div className="row-text">
-            <span className="row-title">
-              {pet.treatsAvailable} {pet.treatsAvailable === 1 ? 'treat' : 'treats'}
-            </span>
-            <span className="row-sub">One for every perfect Monday-to-Sunday week</span>
-          </div>
-        </div>
-        {bday?.available && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <span className="icon-badge bday-card" style={{ border: 0 }}>
-              <BirthdayCake size={30} />
-            </span>
-            <div className="row-text">
-              <span className="row-title">1 birthday pass</span>
-              <span className="row-sub">Makes any day count as complete. Use it from Today.</span>
-            </div>
-          </div>
-        )}
-        <button className="btn btn-primary btn-block" disabled={!canTreat} onClick={giveTreat}>
-          Give {petName} a treat
-        </button>
-        <span className="card-sub">
-          {canTreat
-            ? `Covers ${format(parseISO(pet.treatTarget!), 'EEEE d MMM')} so ${petName} isn’t hungry for it. It doesn’t change your 75.`
-            : pet.treatsAvailable > 0
-              ? `Save it for a hungry day. ${petName} is fine right now.`
-              : 'Get a full week of complete days to earn one.'}
-        </span>
-      </section>
-
-      <span className="section-label">Evolution</span>
-      <section className="card" style={{ gap: 14 }}>
-        {pet.next ? (
-          <>
-            <div className="card-head">
-              <span className="row-title">
-                {pet.daysToNext} {pet.daysToNext === 1 ? 'day' : 'days'} to {pet.next.name}
-              </span>
-              <span className="card-sub">{summary.completedDays} done</span>
-            </div>
-            <div className="meter">
-              <span style={{ width: `${Math.round(pet.stageProgress * 100)}%`, background: 'var(--green)' }} />
-            </div>
-          </>
-        ) : (
-          <span className="row-title">Fully evolved. Legend status.</span>
-        )}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
-          {STAGES.map((s, i) => {
-            const unlocked = i <= pet.stageIndex;
-            const current = i === pet.stageIndex;
-            const nextStart = STAGES[i + 1]?.min;
-            return (
-              <div
-                key={s.name}
-                style={{
-                  borderRadius: 16,
-                  padding: '8px 4px',
-                  background: current ? 'var(--mint-tint)' : 'var(--ground)',
-                  border: `2px solid ${current ? 'var(--green)' : 'transparent'}`,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 2,
+      <div className="pet-chain-head">
+        <h2>Evolution</h2>
+        <span>{pet.stage.blurb}</span>
+      </div>
+      <div className="pet-chain" ref={chainRef}>
+        {STAGES.map((s, i) => {
+          const unlocked = i <= pet.stageIndex;
+          const current = i === pet.stageIndex;
+          const nextStart = STAGES[i + 1]?.min;
+          return (
+            <Fragment key={s.name}>
+              {i > 0 && (
+                <svg className="pet-chain-arrow" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+              <button
+                className={`pet-chain-item${current ? ' is-current' : ''}${shownStage === i ? ' is-shown' : ''}`}
+                aria-current={current}
+                disabled={!unlocked}
+                aria-label={unlocked ? `${s.name}${current ? ', now' : ''}` : `Locked until day ${s.min}`}
+                onClick={() => {
+                  tap();
+                  if (current && i > 0) {
+                    setPreview(null);
+                    setEvo({ from: i - 1, to: i });
+                  } else setPreview(current ? null : i);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
               >
-                <div style={{ filter: unlocked ? undefined : 'brightness(0)', opacity: unlocked ? 1 : 0.14 }}>
-                  <PetSprite style={petStyle} stage={i} mood="happy" size={84} still={!current} />
-                </div>
-                <span style={{ fontSize: 13, fontWeight: 800 }}>{unlocked ? s.name : '???'}</span>
-                <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>
+                <span className="pet-chain-art" style={unlocked ? undefined : { filter: 'brightness(0)', opacity: 0.16 }}>
+                  <PetSprite style={petStyle} stage={i} mood="happy" size={74} still />
+                </span>
+                <strong>{unlocked ? s.name : '???'}</strong>
+                <span>
                   Day {Math.max(1, s.min)}–{nextStart ? nextStart - 1 : 75}
                 </span>
-              </div>
-            );
-          })}
-        </div>
-        <p className="card-sub" style={{ margin: 0 }}>
-          {pet.stage.blurb}
-        </p>
-      </section>
+              </button>
+            </Fragment>
+          );
+        })}
+      </div>
+      <p className="pet-chain-hint">Tap a stage to see it in the world. Tap {petName}’s current stage to replay the evolution.</p>
+
+      {evo && <EvolutionSequence style={petStyle} from={evo.from} to={evo.to} name={petName} onDone={() => setEvo(null)} />}
 
       <Sheet open={editing} onClose={() => setEditing(false)} title="Your sloth">
         <form
@@ -288,32 +360,6 @@ function GenderMark({ id }: { id: PetStyle }) {
     <svg {...p} style={{ color: '#7A4FD0' }}>
       <circle cx="12" cy="16" r="5.5" />
       <path d="M12 10.5V2M8.5 3.8l7 4.4M15.5 3.8l-7 4.4" />
-    </svg>
-  );
-}
-
-function Scenery({ kind }: { kind: 'forest' | 'sunset' }) {
-  return kind === 'forest' ? (
-    <svg className="pet-scenery" viewBox="0 0 400 240" preserveAspectRatio="none" aria-hidden="true">
-      <g fill="#B9D3A6" opacity="0.55">
-        <path d="M20 170 l26 -70 26 70z M70 175 l20 -55 20 55z M300 172 l24 -64 24 64z M350 176 l18 -48 18 48z" />
-      </g>
-      <g fill="#9DC38B" opacity="0.6">
-        <path d="M-10 190 l34 -80 34 80z M330 190 l30 -70 30 70z" />
-      </g>
-      <path d="M0 200 C80 180 140 196 210 188 S330 178 400 192 V240 H0z" fill="#C7E0A9" />
-      <path d="M0 215 C90 204 170 220 260 210 S360 206 400 214 V240 H0z" fill="#B3D493" />
-      <g fill="#F2A7B8">
-        <circle cx="60" cy="214" r="3" />
-        <circle cx="342" cy="208" r="3" />
-        <circle cx="300" cy="222" r="2.4" />
-      </g>
-    </svg>
-  ) : (
-    <svg className="pet-scenery" viewBox="0 0 400 240" preserveAspectRatio="none" aria-hidden="true">
-      <path d="M0 160 L60 90 L110 140 L170 70 L240 150 L300 95 L360 140 L400 110 V240 H0z" fill="#C9B7DA" opacity="0.7" />
-      <path d="M0 190 L70 130 L130 175 L200 120 L270 180 L340 135 L400 170 V240 H0z" fill="#B19FC9" opacity="0.6" />
-      <path d="M0 208 C100 196 200 214 300 204 S380 200 400 206 V240 H0z" fill="#A8C98F" />
     </svg>
   );
 }
