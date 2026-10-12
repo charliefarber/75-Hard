@@ -1,11 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { STAGES } from '../lib/pet';
 import { petSrc, type PetStyle } from './PetSprite';
+import { BiomeScene, biomeFor } from './Biomes';
 import { success } from '../lib/haptics';
 
 /**
- * The evolution moment: the old sloth glows white, flickers between its old and new
- * shapes faster and faster, a flash, and the new form appears in a burst of light.
+ * The evolution moment, as a big step:
+ *  1. the old world darkens; the sloth glows white and flickers between its old (small)
+ *     and new (bigger) shape, faster and faster
+ *  2. flash, shockwave, screen shake: we're in the NEW world, the new form lands on its
+ *     new platform in a burst of light
+ *  3. "Congratulations!" + the world it just unlocked
  */
 export function EvolutionSequence({
   style,
@@ -32,12 +37,15 @@ export function EvolutionSequence({
     const t = setTimeout(() => {
       setPhase('reveal');
       success();
-    }, 3900);
+    }, 4200);
     return () => clearTimeout(t);
   }, [reduced]);
 
   useEffect(() => {
-    if (phase === 'reveal') setTimeout(() => btn.current?.focus({ preventScroll: true }), 900);
+    if (phase === 'reveal') {
+      const t = setTimeout(() => btn.current?.focus({ preventScroll: true }), 1400);
+      return () => clearTimeout(t);
+    }
   }, [phase]);
 
   useEffect(() => {
@@ -46,22 +54,40 @@ export function EvolutionSequence({
     return () => window.removeEventListener('keydown', onKey);
   }, [onDone]);
 
-  const oldSrc = petSrc(style, from, 'happy', true);
-  const newSrc = petSrc(style, to, 'ecstatic', true);
+  const fromBiome = biomeFor(from);
+  const toBiome = biomeFor(to);
+  const biome = phase === 'glow' ? fromBiome : toBiome;
+  const size = (scale: number): CSSProperties => ({ width: 300 * scale, height: 300 * scale });
+
+  const pet = (
+    <div className="evo-pet">
+      {phase === 'glow' ? (
+        <>
+          <img className="evo-sil evo-old" src={petSrc(style, from, 'happy', true)} alt="" style={size(fromBiome.scale)} />
+          <img className="evo-sil evo-new" src={petSrc(style, to, 'ecstatic', true)} alt="" style={size(toBiome.scale)} />
+        </>
+      ) : (
+        <img className="evo-final" src={petSrc(style, to, 'ecstatic', true)} alt="" style={size(toBiome.scale)} />
+      )}
+    </div>
+  );
 
   return (
     <div className={`evo evo-${phase}`} role="dialog" aria-modal="true" aria-label={`${name} is evolving`}>
-      <div className="evo-rays" aria-hidden="true" />
-      <div className="evo-stage" aria-hidden="true">
-        {phase === 'glow' ? (
-          <>
-            <img className="evo-sil evo-old" src={oldSrc} alt="" />
-            <img className="evo-sil evo-new" src={newSrc} alt="" />
-          </>
-        ) : (
-          <img className="evo-final" src={newSrc} alt="" />
-        )}
+      <div className={`world evo-world world-${biome.id} hud-light`} key={biome.id}>
+        <BiomeScene biome={biome} slot={pet} />
+        <div className="evo-dim" aria-hidden="true" />
       </div>
+      <div className="evo-rays" aria-hidden="true" />
+      {phase === 'reveal' && (
+        <div className="evo-burst" aria-hidden="true">
+          <span className="evo-shock" />
+          <span className="evo-shock evo-shock-2" />
+          {Array.from({ length: 14 }, (_, i) => (
+            <i key={i} style={{ ['--a' as string]: `${(i / 14) * 360}deg`, ['--d' as string]: `${120 + (i % 3) * 50}px` }} />
+          ))}
+        </div>
+      )}
       <div className="evo-flash" aria-hidden="true" />
       <div className="evo-text" aria-live="polite">
         {phase === 'glow' ? (
@@ -69,9 +95,9 @@ export function EvolutionSequence({
         ) : (
           <>
             <p>
-              Congratulations! {name} evolved into <strong>{STAGES[to].name}</strong>!
+              {name} evolved into <strong>{STAGES[to].name}</strong>!
             </p>
-            <span>{STAGES[to].blurb}</span>
+            <span className="evo-unlock">New world unlocked: {toBiome.name}</span>
             <button ref={btn} className="btn btn-primary" onClick={onDone}>
               Continue
             </button>

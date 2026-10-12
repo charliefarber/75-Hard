@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { useApp } from '../data/AppData';
 import { summarise } from '../lib/challenge';
@@ -6,6 +6,8 @@ import { MOODS, STAGES, petState } from '../lib/pet';
 import { PET_STYLES, PetSprite, type PetStyle } from '../components/PetSprite';
 import { Sheet } from '../components/ui';
 import { PetWorld } from '../components/PetWorld';
+import { BIOMES, biomeFor } from '../components/Biomes';
+import '@fontsource/caveat/600.css';
 import { EvolutionSequence } from '../components/EvolutionSequence';
 import { BirthdayCake } from '../components/BirthdayCake';
 import { birthdayPass } from '../lib/birthday';
@@ -26,7 +28,9 @@ export function PetScreen() {
   const [style, setStyle] = useState<PetStyle>('girl');
   const [preview, setPreview] = useState<number | null>(null);
   const [evo, setEvo] = useState<{ from: number; to: number } | null>(null);
-  const chainRef = useRef<HTMLDivElement>(null);
+  const [photo, setPhoto] = useState(false);
+  const [sceneryOpen, setSceneryOpen] = useState(false);
+  const [scenery, setScenery] = useState<number | null>(null);
 
   const summary = useMemo(() => (challenge && profile ? summarise(challenge, logs, profile, today) : null), [challenge, logs, profile, today]);
   const pet = useMemo(() => (summary && challenge ? petState(summary, challenge.treat_dates ?? [], today) : null), [summary, challenge, today]);
@@ -65,11 +69,23 @@ export function PetScreen() {
     }
   }, [challenge, stageIndex]);
 
-  // Keep the current stage in view in the evolution chain.
+  // Her chosen scenery (any unlocked world), remembered per challenge.
+  const sceneryKey = challenge ? `seventyfive:scenery-${challenge.id}` : '';
   useEffect(() => {
-    const el = chainRef.current?.querySelector<HTMLElement>('[aria-current="true"]');
-    el?.scrollIntoView({ block: 'nearest', inline: 'center' });
-  }, [stageIndex]);
+    if (!sceneryKey) return;
+    try {
+      const v = localStorage.getItem(sceneryKey);
+      setScenery(v === null ? null : Number(v));
+    } catch {
+      /* storage unavailable */
+    }
+  }, [sceneryKey]);
+
+  // Photo mode: the scene fills the screen and the tab bar hides.
+  useEffect(() => {
+    document.body.classList.toggle('photo-mode', photo);
+    return () => document.body.classList.remove('photo-mode');
+  }, [photo]);
 
   if (!profile || !challenge || !summary || !pet) return null;
   const petName = challenge.pet_name || 'Mochi';
@@ -80,6 +96,19 @@ export function PetScreen() {
   const bday = birthdayPass(profile.birthday, profile.birthday_pass_year, today);
   const shownStage = preview ?? pet.stageIndex;
   const day = Math.max(1, summary.currentDay);
+  const worldIndex = preview ?? (scenery !== null && scenery <= pet.stageIndex ? scenery : pet.stageIndex);
+  const biome = biomeFor(worldIndex);
+  const motto = biome.mottos[Number(today.slice(-2)) % biome.mottos.length];
+
+  function chooseScenery(i: number | null) {
+    setScenery(i);
+    try {
+      if (i === null) localStorage.removeItem(sceneryKey);
+      else localStorage.setItem(sceneryKey, String(i));
+    } catch {
+      /* storage unavailable */
+    }
+  }
 
   function openEditor() {
     setName(challenge?.pet_name || 'Mochi');
@@ -106,6 +135,21 @@ export function PetScreen() {
 
   const arc = (
     <>
+      <p className="world-motto">{motto}</p>
+      <div className="world-tools">
+        <button aria-label="Photo mode" onClick={() => (tap(), setPhoto(true))}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 8h3l2-3h6l2 3h3v11H4z" />
+            <circle cx="12" cy="13" r="3.5" />
+          </svg>
+        </button>
+        <button aria-label="Change scenery" onClick={() => (tap(), setSceneryOpen(true))}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 19l6-9 4 6 3-4 5 7z" />
+            <circle cx="17" cy="6" r="2" />
+          </svg>
+        </button>
+      </div>
       <div className="world-day-count">
         <span>Day</span>
         <strong>{day}</strong>
@@ -129,8 +173,10 @@ export function PetScreen() {
   );
 
   return (
-    <div className="screen pet-screen">
+    <div className={`screen pet-screen${photo ? ' is-photo' : ''}`}>
       <PetWorld
+        biome={biome}
+        photo={photo}
         style={petStyle}
         stage={shownStage}
         mood={preview !== null ? 'happy' : pet.mood}
@@ -139,10 +185,17 @@ export function PetScreen() {
         onThrowLanded={treatLanded}
         label={`${petName}, ${STAGES[shownStage].name}, ${mood.label}`}
         top={arc}
-      />
+      >
+        {photo && (
+          <button className="world-photo-done" onClick={() => setPhoto(false)}>
+            Done
+          </button>
+        )}
+      </PetWorld>
 
       <div className="pet-sheet">
         <button className="pet-name" onClick={openEditor} aria-label={`${petName}. Edit name and sloth`}>
+          <GenderMark id={petStyle} />
           <span>{petName}</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M4 20h4L19 9l-4-4L4 16z" />
@@ -154,7 +207,7 @@ export function PetScreen() {
           <div className="pet-hp-bar">
             <span style={{ width: `${pet.fullness}%`, background: fullnessColor(pet.fullness) }} />
           </div>
-          <span className="pet-hp-label">{mood.label}</span>
+          <span className="pet-hp-label">Fullness {pet.fullness} / 100</span>
         </div>
 
         <div className="pet-stats">
@@ -228,53 +281,80 @@ export function PetScreen() {
                 ? `${petName} is fed for today. Come back tomorrow.`
                 : mood.line(petName)}
         </p>
+        <div className="pet-line-up">
+          <span className="pet-line-up-title">Evolution line</span>
+          <div className="pet-evo-row">
+            {STAGES.map((s, i) => {
+              const unlocked = i <= pet.stageIndex;
+              const current = i === pet.stageIndex;
+              const nextStart = STAGES[i + 1]?.min;
+              return (
+                <button
+                  key={s.name}
+                  className={`pet-evo-item${current ? ' is-current' : ''}${worldIndex === i && !current ? ' is-shown' : ''}`}
+                  aria-current={current}
+                  disabled={!unlocked}
+                  aria-label={unlocked ? `${s.name}${current ? ', now. Replay evolution' : '. Show'}` : `${s.name}: unlocks on day ${Math.max(1, s.min)}`}
+                  onClick={() => {
+                    tap();
+                    if (current && i > 0) {
+                      setPreview(null);
+                      setEvo({ from: i - 1, to: i });
+                    } else setPreview(current ? null : i);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                >
+                  <span className="pet-evo-art" style={unlocked ? undefined : { filter: 'brightness(0)', opacity: 0.18 }}>
+                    <PetSprite style={petStyle} stage={i} mood="happy" size={56} still />
+                  </span>
+                  <span className="pet-evo-days">
+                    Day {Math.max(1, s.min)}–{nextStart ? nextStart - 1 : 75}
+                  </span>
+                  <strong>{unlocked ? s.name : '???'}</strong>
+                </button>
+              );
+            })}
+          </div>
+          <span className="pet-evo-hint">Each stage unlocks a new world. Tap one to visit it, or tap {petName} to replay the evolution.</span>
+        </div>
       </div>
 
-      <div className="pet-chain-head">
-        <h2>Evolution</h2>
-        <span>{pet.stage.blurb}</span>
-      </div>
-      <div className="pet-chain" ref={chainRef}>
-        {STAGES.map((s, i) => {
-          const unlocked = i <= pet.stageIndex;
-          const current = i === pet.stageIndex;
-          const nextStart = STAGES[i + 1]?.min;
-          return (
-            <Fragment key={s.name}>
-              {i > 0 && (
-                <svg className="pet-chain-arrow" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
-              <button
-                className={`pet-chain-item${current ? ' is-current' : ''}${shownStage === i ? ' is-shown' : ''}`}
-                aria-current={current}
-                disabled={!unlocked}
-                aria-label={unlocked ? `${s.name}${current ? ', now' : ''}` : `Locked until day ${s.min}`}
-                onClick={() => {
-                  tap();
-                  if (current && i > 0) {
-                    setPreview(null);
-                    setEvo({ from: i - 1, to: i });
-                  } else setPreview(current ? null : i);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-              >
-                <span className="pet-chain-art" style={unlocked ? undefined : { filter: 'brightness(0)', opacity: 0.16 }}>
-                  <PetSprite style={petStyle} stage={i} mood="happy" size={74} still />
-                </span>
-                <strong>{unlocked ? s.name : '???'}</strong>
-                <span>
-                  Day {Math.max(1, s.min)}–{nextStart ? nextStart - 1 : 75}
-                </span>
-              </button>
-            </Fragment>
-          );
-        })}
-      </div>
-      <p className="pet-chain-hint">Tap a stage to see it in the world. Tap {petName}’s current stage to replay the evolution.</p>
 
       {evo && <EvolutionSequence style={petStyle} from={evo.from} to={evo.to} name={petName} onDone={() => setEvo(null)} />}
+
+      <Sheet open={sceneryOpen} onClose={() => setSceneryOpen(false)} title="Scenery">
+        <p style={{ margin: 0, color: 'var(--muted)', lineHeight: 1.5 }}>Every evolution unlocks a new world. Pick where {petName} hangs out.</p>
+        <div className="scenery-grid">
+          {BIOMES.map((b, i) => {
+            const unlocked = i <= pet.stageIndex;
+            const on = (scenery ?? pet.stageIndex) === i;
+            return (
+              <button
+                key={b.id}
+                className={`scenery-card${on ? ' is-on' : ''}`}
+                disabled={!unlocked}
+                aria-pressed={on}
+                onClick={() => {
+                  tap();
+                  chooseScenery(i === pet.stageIndex ? null : i);
+                  setSceneryOpen(false);
+                }}
+              >
+                <span className="scenery-swatch" style={{ background: `linear-gradient(180deg, ${b.sky[0]}, ${b.sky[1]} 55%, ${b.sky[2]})` }}>
+                  {!unlocked && (
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                      <rect x="5" y="11" width="14" height="10" rx="2" />
+                      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+                    </svg>
+                  )}
+                </span>
+                <strong>{unlocked ? b.name : '???'}</strong>
+                <span>{unlocked ? STAGES[i].name : `Unlocks at ${STAGES[i].name}`}</span>
+              </button>
+            );
+          })}
+        </div>
+      </Sheet>
 
       <Sheet open={editing} onClose={() => setEditing(false)} title="Your sloth">
         <form

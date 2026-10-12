@@ -32,6 +32,7 @@ export function PetSprite({
   still = false,
   hd = false,
   shade = false,
+  scale,
   label,
 }: {
   style: PetStyle;
@@ -45,6 +46,8 @@ export function PetSprite({
   hd?: boolean;
   /** Add a light layer shaped like the sloth, so scene lighting can move across it. */
   shade?: boolean;
+  /** Override the stage's size (the Pet world sizes each stage itself). */
+  scale?: number;
   label?: string;
 }) {
   const [boops, setBoops] = useState<number[]>([]);
@@ -71,7 +74,7 @@ export function PetSprite({
   const body = (
     <div
       className={`pet pet-${eating ? 'eating' : mood}${still ? ' pet-still' : ''}`}
-      style={{ width: size, height: size, ['--pet-scale' as string]: STAGE_SCALE[stage] ?? 1 }}
+      style={{ width: size, height: size, ['--pet-scale' as string]: scale ?? STAGE_SCALE[stage] ?? 1 }}
     >
       <span className="pet-shadow" />
       <div className={`pet-motion${squish ? ' pet-squish' : ''}`} onAnimationEnd={(e) => e.animationName === 'pet-squish' && setSquish(false)}>
