@@ -96,3 +96,24 @@ export async function preparePhoto(file: Blob): Promise<{ full: Blob; thumb: Blo
     if ('close' in img) img.close();
   }
 }
+
+/** A smaller JPEG as a data URL, for sending a meal photo to be estimated (location data dropped too). */
+export async function photoDataUrl(file: Blob, edge = 1024, quality = 0.8): Promise<string> {
+  let img: Drawable;
+  try {
+    img = await decode(file);
+  } catch {
+    throw new Error('That photo couldn’t be opened. Try a different one.');
+  }
+  try {
+    const blob = await encode(img, edge, quality);
+    return await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error('That photo couldn’t be read.'));
+      r.readAsDataURL(blob);
+    });
+  } finally {
+    if ('close' in img) img.close();
+  }
+}

@@ -1,0 +1,161 @@
+/* Today: header, the Eaten · Burned · Steps rings, meals, sections. */
+
+/* ---------- Header ---------- */
+
+.today-head {
+  background: var(--forest); color: #fff; border-radius: 0 0 30px 30px;
+  padding: calc(var(--safe-top) + 16px) 20px 50px; display: flex; flex-direction: column; gap: 18px;
+}
+.today-head-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.today-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.today-date { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mint-soft); }
+.today-day { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+.today-day span { font-weight: 500; color: var(--mint-soft); font-size: 19px; }
+.today-head-actions { display: flex; gap: 8px; }
+.head-btn { background: rgba(255, 255, 255, 0.12); color: #fff; }
+
+.today-hero { display: flex; align-items: center; gap: 22px; }
+.hero-count { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; font-feature-settings: 'tnum' 0; }
+.hero-unit { font-size: 12px; font-weight: 600; color: var(--mint-soft); }
+.hero-done { display: flex; flex-direction: column; align-items: center; gap: 2px; animation: pop 0.5s var(--ease); }
+.hero-done span { font-size: 12px; font-weight: 700; color: var(--mint-soft); }
+.hero-stats { display: flex; flex-direction: column; gap: 14px; flex: 1; min-width: 0; }
+.hero-stat { display: flex; flex-direction: column; gap: 2px; }
+.hero-stat-label { font-size: 12px; font-weight: 600; color: var(--mint-soft); }
+.hero-stat-value { font-size: 19px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+
+.week-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.week-day {
+  border: 0; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 0; border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08); color: #fff; transition: background 0.25s, color 0.25s;
+}
+.week-day:disabled { opacity: 0.45; }
+.week-day[aria-pressed='true'] { background: #fff; color: var(--forest); }
+.week-letter { font-size: 11px; font-weight: 600; color: var(--mint-soft); }
+.week-day[aria-pressed='true'] .week-letter { color: var(--green-ink); }
+.week-num { font-size: 15px; font-weight: 700; }
+.week-dot { width: 6px; height: 6px; border-radius: 3px; background: transparent; }
+.week-day.complete .week-dot { background: var(--mint); }
+.week-day.missed .week-dot { background: var(--gold); }
+.week-day[aria-pressed='true'].complete .week-dot { background: var(--green); }
+
+/* ---------- Content ---------- */
+
+.today-main { padding: 0 16px; margin-top: -32px; display: flex; flex-direction: column; gap: 12px; position: relative; }
+.today .section-label {
+  margin: 10px 0 -2px; padding: 0 4px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  font-size: 12.5px; font-weight: 800; letter-spacing: 0.07em;
+}
+.today .section-label span { font-size: 12.5px; letter-spacing: 0; text-transform: none; font-weight: 700; color: var(--faint); }
+.card-amount { font-size: 14px; color: var(--muted); }
+.card-amount strong { font-size: 20px; font-weight: 800; font-feature-settings: 'tnum' 0; }
+.water-add { flex: 1; min-width: 0; height: 48px; border-radius: 14px; background: var(--water-tint); color: var(--water); font-size: 15px; white-space: nowrap; }
+.water-ml { font-weight: 600; opacity: 0.75; }
+@media (max-width: 360px) { .water-ml { display: none; } }
+.notes-label { display: flex; align-items: center; gap: 10px; color: var(--ink); font-size: 16px; font-weight: 700; }
+.notice-card { background: #fff8e8; border: 1.5px solid #f5dfa8; }
+.notice-text { margin: 0; line-height: 1.5; color: #6b4e12; }
+.past-actions { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.past-actions .btn { height: 40px; }
+
+/* ---------- Eaten · Burned · Steps ---------- */
+
+.energy { padding: 18px 14px 6px; gap: 10px; box-shadow: 0 8px 28px rgba(14, 50, 30, 0.09), 0 1px 0 rgba(20, 35, 26, 0.03); }
+.energy-rings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ering {
+  border: 0; background: none; color: inherit; padding: 0 0 4px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  min-width: 0; border-radius: 16px; transition: transform 0.15s var(--ease);
+}
+.ering:active { transform: scale(0.96); }
+.ering-dial { position: relative; width: min(100%, 98px); aspect-ratio: 1; margin-bottom: 6px; }
+.ering-dial svg { display: block; width: 100%; height: 100%; }
+.ering-track, .ering-fill { fill: none; stroke-width: 10; }
+.ering-fill { stroke-linecap: round; }
+.ering-eat { --rc: var(--eat); --rt: var(--eat-tint); }
+.ering-burn { --rc: var(--burn); --rt: var(--burn-tint); }
+.ering-steps { --rc: var(--steps); --rt: var(--steps-tint); }
+.ering-track { stroke: var(--rt); }
+.ering-fill { stroke: var(--rc); }
+.ering-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; }
+.ering-center strong { font-size: 17px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; font-feature-settings: 'tnum' 0; }
+.ering-center span { font-size: 10.5px; font-weight: 700; color: var(--muted); }
+.ering-label { display: inline-flex; align-items: center; gap: 5px; font-size: 13.5px; font-weight: 800; }
+.ering-icon { width: 20px; height: 20px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; background: var(--rt); color: var(--rc); }
+.ering-sub { font-size: 11.5px; font-weight: 600; color: var(--muted); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.ering-sub.warn { color: #b4570f; }
+
+.net-row {
+  border: 0; background: none; color: inherit; text-align: left; width: calc(100% + 28px); margin: 0 -14px;
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px 12px 18px; border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--radius-card) var(--radius-card); transition: background 0.15s;
+}
+.net-row:active { background: var(--surface-2); }
+.net-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.net-label { font-size: 14px; font-weight: 800; }
+.net-sub { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.net-value { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.net-value strong { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; font-feature-settings: 'tnum' 0; }
+.net-value span { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+
+/* ---------- Food on Today ---------- */
+
+.food-today { gap: 6px; padding-bottom: 8px; }
+.food-today .card-head { align-items: flex-start; }
+.food-today .card-head .row-text { gap: 3px; }
+.diary-link { display: inline-flex; align-items: center; gap: 2px; padding: 0 0 0 8px; height: 26px; font-size: 14px; }
+.meal-rows { display: flex; flex-direction: column; margin: 0 -16px; }
+.meal-row { display: flex; align-items: center; gap: 8px; padding: 0 16px 0 0; position: relative; }
+.meal-row + .meal-row::before { content: ''; position: absolute; left: 66px; right: 16px; top: 0; height: 1px; background: var(--line); }
+.meal-row-main {
+  flex: 1; min-width: 0; border: 0; background: none; color: inherit; text-align: left; display: flex; align-items: center; gap: 12px;
+  padding: 9px 4px 9px 16px; transition: background 0.15s;
+}
+.meal-row-main:active { background: var(--surface-2); }
+.meal-row-main .row-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meal-emoji { width: 38px; height: 38px; border-radius: 12px; background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-size: 19px; flex: none; }
+.meal-row-kcal { font-size: 15px; font-weight: 800; font-feature-settings: 'tnum' 0; padding-left: 4px; }
+
+/* ---------- Pet strip ---------- */
+
+.pet-strip { border: 0; flex-direction: row; align-items: center; gap: 12px; padding: 8px 16px 8px 8px; text-align: left; }
+.pet-strip-text { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pet-strip-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.pet-strip-name { font-size: 16px; font-weight: 800; }
+.pet-strip-mood { font-size: 12px; font-weight: 700; }
+
+/* ---------- Calories breakdown sheet ---------- */
+
+.en-top { display: flex; align-items: center; justify-content: space-between; gap: 4px; background: var(--surface-2); border-radius: 18px; padding: 14px 12px; }
+.en-top > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+.en-top > div span { font-size: 12px; font-weight: 700; color: var(--muted); }
+.en-top > div strong { font-size: 21px; font-weight: 800; letter-spacing: -0.02em; font-feature-settings: 'tnum' 0; }
+.en-op { font-size: 18px; font-weight: 700; color: var(--faint); }
+.en-block { display: flex; flex-direction: column; gap: 12px; }
+.en-bar { display: flex; gap: 2px; height: 14px; border-radius: 7px; overflow: hidden; background: var(--surface-2); }
+.en-bar > span { display: block; height: 100%; min-width: 3px; }
+.seg-rest { --sc: #9fb3a6; }
+.seg-work { --sc: var(--burn); }
+.seg-steps { --sc: var(--steps); }
+.en-bar > span { background: var(--sc); }
+.en-rows { display: flex; flex-direction: column; }
+.en-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.en-row:first-child { border-top: 0; }
+.en-row strong, .en-total strong { font-size: 16px; font-weight: 800; font-feature-settings: 'tnum' 0; }
+.en-dot { width: 12px; height: 12px; border-radius: 4px; background: var(--sc); flex: none; }
+.en-sub-row { display: flex; align-items: center; gap: 10px; padding: 2px 0 8px 24px; }
+.en-sub-title { font-size: 14px; font-weight: 700; }
+.en-sub-row > span:last-child { font-size: 14px; font-weight: 700; color: var(--ink-2); }
+.en-total { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line-strong); }
+.en-total > span:first-child { font-weight: 800; font-size: 15px; }
+.en-total.big strong { font-size: 20px; }
+details.burn-how summary { font-weight: 800; color: var(--ink); cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+details.burn-how summary::-webkit-details-marker { display: none; }
+details.burn-how summary::after { content: '+'; font-size: 20px; font-weight: 600; color: var(--muted); line-height: 1; }
+details.burn-how[open] summary::after { content: '−'; }
+details.burn-how p { margin: 8px 0 0; }
+
+@media (max-width: 360px) {
+  .ering-center strong { font-size: 15px; }
+  .ering-sub { font-size: 10.5px; }
+  .today-hero { gap: 16px; }
+}

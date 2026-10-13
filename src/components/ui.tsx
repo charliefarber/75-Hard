@@ -25,7 +25,7 @@ export function Ring({
   const pct = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
   return (
     <div style={{ position: 'relative', width: size, height: size, flex: 'none' }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={label}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role={label ? 'img' : undefined} aria-label={label || undefined} aria-hidden={label ? undefined : true}>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={stroke} />
         <circle
           className="ring-progress"
@@ -144,7 +144,22 @@ export function Stepper({
   );
 }
 
-export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+export function Sheet({
+  open,
+  onClose,
+  title,
+  children,
+  className,
+  onBack,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+  className?: string;
+  /** Shows a back arrow beside the title. */
+  onBack?: () => void;
+}) {
   const id = useId();
   const ref = useRef<HTMLDivElement>(null);
   // Keep the latest onClose without re-running the open/close effect. Parents often pass a
@@ -170,9 +185,20 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
   return (
     <>
       <div className="sheet-backdrop" onClick={() => closeRef.current()} />
-      <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={id} ref={ref} tabIndex={-1}>
+      <div className={`sheet${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-labelledby={id} ref={ref} tabIndex={-1}>
         <div className="sheet-grip" />
-        <h2 id={id}>{title}</h2>
+        {onBack ? (
+          <div className="sheet-head">
+            <button type="button" className="sheet-back" aria-label="Back" onClick={() => (tap(), onBack())}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M15 6l-6 6 6 6" />
+              </svg>
+            </button>
+            <h2 id={id}>{title}</h2>
+          </div>
+        ) : (
+          <h2 id={id}>{title}</h2>
+        )}
         {children}
       </div>
     </>

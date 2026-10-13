@@ -1,4 +1,5 @@
-export type Source = 'manual' | 'health' | 'shortcut';
+/** Where a number came from. 'food' = added up from the food diary. */
+export type Source = 'manual' | 'health' | 'shortcut' | 'food';
 
 export type Intensity = 'light' | 'normal' | 'hard';
 
@@ -64,6 +65,12 @@ export interface Profile {
   workout_goal_minutes?: number;
   /** For calorie estimates (0010). */
   height_cm?: number | null;
+  /** Daily macro targets in grams; unset = a balanced split of calorie_goal (0012). */
+  protein_goal_g?: number | null;
+  carbs_goal_g?: number | null;
+  fat_goal_g?: number | null;
+  /** Daily active-calorie target for the Burned ring; unset = worked out from her goals (0012). */
+  active_goal_kcal?: number | null;
   sex?: 'female' | 'male' | null;
   weight_unit?: WeightUnit;
   workout_favorites?: WorkoutFavorite[];

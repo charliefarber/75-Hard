@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import { addDays, parseISO } from 'date-fns';
 import { createRepo, type ChallengePatch, type Repo } from './repo';
 import type { AuthUser, Challenge, DailyLog, Profile } from './types';
@@ -27,6 +27,8 @@ interface AppData {
   challenge: Challenge | null;
   history: Challenge[];
   logs: Record<string, DailyLog>;
+  /** Always the latest logs (for async work that shouldn't wait for a re-render). */
+  logsRef: MutableRefObject<Record<string, DailyLog>>;
   today: string;
   health: HealthState;
   error: string | null;
@@ -497,6 +499,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     challenge,
     history,
     logs,
+    logsRef,
     today,
     health,
     error,

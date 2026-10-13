@@ -13,7 +13,8 @@ const HEALTH_ACTIVITY: Record<string, string> = {
 /**
  * Fold one day of Apple Health data into a log. Rules:
  *  - steps: take the higher number (steps only go up through the day)
- *  - calories: Apple Health (i.e. Lifesum) wins unless she typed a number by hand
+ *  - calories: Apple Health (i.e. Lifesum) wins unless she typed a number by hand or logged
+ *    the day in the food diary
  *  - water: take the higher number (in-app taps vs. water logged in Lifesum)
  *  - workouts: add each Health workout once (any length counts towards the daily minutes)
  */
@@ -25,7 +26,7 @@ export function mergeHealthDay(log: DailyLog, h: HealthDay, _profile?: Pick<Prof
     next.steps_source = 'health';
   }
 
-  if (h.calories !== undefined && log.calories_source !== 'manual' && h.calories !== log.calories) {
+  if (h.calories !== undefined && log.calories_source !== 'manual' && log.calories_source !== 'food' && h.calories !== log.calories) {
     next.calories = h.calories;
     next.calories_source = 'health';
   }

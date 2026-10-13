@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
 import { AppDataProvider, useApp } from './data/AppData';
+import { FoodDataProvider } from './data/FoodData';
 import { AuthScreen } from './screens/AuthScreen';
 import { Onboarding } from './screens/Onboarding';
 import { TodayScreen } from './screens/TodayScreen';
 import { ProgressScreen } from './screens/ProgressScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { PetScreen } from './screens/PetScreen';
+import { FoodScreen } from './screens/FoodScreen';
 import { Toast } from './components/ui';
-import { IconGrid, IconHome, IconLeaf, IconUser } from './components/Icons';
+import { IconFork, IconGrid, IconHome, IconLeaf, IconUser } from './components/Icons';
 import { tap } from './lib/haptics';
 import { setStatusBar } from './lib/statusbar';
 
-type Tab = 'today' | 'progress' | 'pet' | 'profile';
+type Tab = 'today' | 'food' | 'progress' | 'pet' | 'profile';
 
 function Splash() {
   return (
@@ -72,6 +74,7 @@ function Main() {
 
   const tabs: { id: Tab; label: string; icon: typeof IconHome }[] = [
     { id: 'today', label: 'Today', icon: IconHome },
+    { id: 'food', label: 'Food', icon: IconFork },
     { id: 'progress', label: 'Progress', icon: IconGrid },
     { id: 'pet', label: 'Pet', icon: IconLeaf },
     { id: 'profile', label: 'Profile', icon: IconUser },
@@ -86,12 +89,14 @@ function Main() {
           setDate={setDate}
           openProgress={() => setTab('progress')}
           openPet={() => setTab('pet')}
+          openFood={() => setTab('food')}
           openProfile={() => {
             setProfileFocus('about');
             setTab('profile');
           }}
         />
       )}
+      {tab === 'food' && <FoodScreen date={date} setDate={setDate} />}
       {tab === 'pet' && <PetScreen />}
       {tab === 'progress' && (
         <ProgressScreen
@@ -131,7 +136,9 @@ function Main() {
 export default function App() {
   return (
     <AppDataProvider>
-      <Main />
+      <FoodDataProvider>
+        <Main />
+      </FoodDataProvider>
     </AppDataProvider>
   );
 }
