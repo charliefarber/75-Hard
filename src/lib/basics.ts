@@ -224,3 +224,35 @@ export function searchBasics(q: string, limit = 8): Food[] {
 }
 
 const singular = (w: string) => (w.length > 3 && w.endsWith('es') ? w.slice(0, -2) : w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w);
+
+const EMOJI: Record<string, string> = {
+  apple: '🍎', banana: '🍌', orange: '🍊', clementine: '🍊', grapes: '🍇', strawberries: '🍓', blueberries: '🫐', raspberries: '🍓',
+  blackberries: '🫐', pear: '🍐', peach: '🍑', nectarine: '🍑', plum: '🍑', mango: '🥭', pineapple: '🍍', watermelon: '🍉', melon: '🍈',
+  kiwi: '🥝', avocado: '🥑', cherries: '🍒', pomegranate: '🍎', grapefruit: '🍊', dates: '🌴', raisins: '🍇', apricot: '🍑',
+  broccoli: '🥦', spinach: '🥬', carrot: '🥕', tomato: '🍅', cucumber: '🥒', salad: '🥗', pepper: '🫑', onion: '🧅', mushrooms: '🍄',
+  courgette: '🥒', sweet_potato: '🍠', potato_baked: '🥔', potato_boiled: '🥔', mash: '🥔', fries: '🍟', peas: '🫛', green_beans: '🫛',
+  sweetcorn: '🌽', cauliflower: '🥦', asparagus: '🌿', kale: '🥬', cabbage: '🥬', sprouts: '🥬', celery: '🥬', beetroot: '🍠',
+  edamame: '🫛', aubergine: '🍆', squash: '🎃', rice_white: '🍚', rice_brown: '🍚', pasta: '🍝', pasta_dry: '🍝', pasta_wholewheat: '🍝',
+  oats: '🥣', porridge_water: '🥣', porridge_milk: '🥣', bread_white: '🍞', bread_wholemeal: '🍞', sourdough: '🍞', bagel: '🥯',
+  wrap: '🌯', pitta: '🫓', naan: '🫓', quinoa: '🍚', couscous: '🍚', noodles_egg: '🍜', noodles_rice: '🍜', granola: '🥣',
+  cornflakes: '🥣', muesli: '🥣', rice_cake: '🍘', croissant: '🥐', pancake: '🥞', chicken_breast: '🍗', chicken_thigh: '🍗',
+  turkey_breast: '🍗', beef_mince_lean: '🥩', beef_mince: '🥩', steak: '🥩', pork_chop: '🥩', bacon: '🥓', ham: '🥓', sausage: '🌭',
+  salmon: '🐟', tuna: '🐟', cod: '🐟', prawns: '🦐', egg: '🥚', egg_white: '🥚', scrambled: '🍳', fried_egg: '🍳', tofu: '🧈',
+  tempeh: '🧈', lentils: '🫘', chickpeas: '🫘', black_beans: '🫘', kidney_beans: '🫘', baked_beans: '🫘', peanut_butter: '🥜',
+  almonds: '🥜', walnuts: '🥜', cashews: '🥜', peanuts: '🥜', mixed_nuts: '🥜', chia: '🌱', whey: '🥤', protein_bar: '🍫',
+  milk_semi: '🥛', milk_whole: '🥛', milk_skimmed: '🥛', oat_milk: '🥛', almond_milk: '🥛', soya_milk: '🥛', greek_0: '🥣',
+  greek_full: '🥣', yoghurt_natural: '🥣', skyr: '🥣', cottage: '🧀', cheddar: '🧀', mozzarella: '🧀', feta: '🧀', parmesan: '🧀',
+  halloumi: '🧀', butter: '🧈', ice_cream: '🍨', olive_oil: '🫒', honey: '🍯', sugar: '🧂', maple: '🍯', jam: '🍓', ketchup: '🍅',
+  mayo: '🥚', soy_sauce: '🥢', dark_choc: '🍫', milk_choc: '🍫', crisps: '🥔', popcorn: '🍿', digestive: '🍪', pizza: '🍕',
+  coffee: '☕', latte: '☕', cappuccino: '☕', flat_white: '☕', tea: '🍵', orange_juice: '🧃', smoothie: '🥤', cola: '🥤',
+  diet_cola: '🥤', beer: '🍺', red_wine: '🍷', white_wine: '🥂', prosecco: '🥂',
+};
+
+/** A friendly picture for foods without a product photo. */
+export function foodEmoji(key: string | null | undefined): string {
+  if (!key) return '🍽️';
+  if (key.startsWith('basic:')) return EMOJI[key.slice(6)] ?? '🍽️';
+  if (key.startsWith('quick:')) return '⚡️';
+  if (key.startsWith('est:')) return '✨';
+  return '🍽️';
+}

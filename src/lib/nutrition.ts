@@ -1,4 +1,4 @@
-import type { EntrySource, Food, FoodEntry, Meal, Nutrition, Serving } from '../data/foodTypes';
+import type { EntrySource, EstimatedItem, Food, FoodEntry, Meal, Nutrition, Serving } from '../data/foodTypes';
 import { MEALS } from '../data/foodTypes';
 
 export const KJ_PER_KCAL = 4.184;
@@ -33,9 +33,9 @@ export function gramsFor(food: Pick<Food, 'servings' | 'base'>, amount: number, 
 }
 
 /** What to start with when she picks a food: the last amount she used, else its usual serving. */
-export function defaultAmount(food: Food, last?: { amount: number | null; unit: string | null } | null): { amount: number; unit: string } {
-  if (last?.amount && last.unit && (last.unit === food.base || food.servings.some((s) => s.label === last.unit)))
-    return { amount: last.amount, unit: last.unit };
+export function defaultAmount(food: Food, last?: { last_amount: number | null; last_unit: string | null } | null): { amount: number; unit: string } {
+  if (last?.last_amount && last.last_unit && (last.last_unit === food.base || food.servings.some((s) => s.label === last.last_unit)))
+    return { amount: last.last_amount, unit: last.last_unit };
   const s = food.defaultServing != null ? food.servings[food.defaultServing] : food.servings[0];
   return s ? { amount: 1, unit: s.label } : { amount: 100, unit: food.base };
 }
@@ -168,13 +168,11 @@ export function splitGoals(kcal: number, [p, c, f]: [number, number, number]): M
 export function amountText(e: Pick<FoodEntry, 'amount' | 'unit' | 'grams'>): string {
   const a = niceNumber(e.amount);
   if (e.unit === 'g' || e.unit === 'ml') return `${a} ${e.unit}`;
-  if (e.unit === 'portion') return e.grams ? `${Math.round(e.grams)} g` : 'portion';
   if (e.amount === 1) return e.unit;
-  // "1 medium (118 g)" × 2 → "2 medium (236 g)"; "handful (80 g)" × 2 → "2 × handful (160 g)"
-  const bare = e.unit.replace(/\s*\([^)]*\)\s*$/, '');
-  const unit = /\(\s*[\d.]+\s*ml\s*\)/i.test(e.unit) ? 'ml' : 'g';
-  const total = e.grams ? ` (${Math.round(e.grams)} ${unit})` : '';
-  return /^1\s+/.test(bare) ? `${a} ${bare.replace(/^1\s+/, '')}${total}` : `${a} × ${bare}${total}`;
+  // "1 medium (118 g)" × 2 → "2 × medium (236 g)"; labels without grams stay without them
+  const m = e.unit.match(/^(.*?)\s*\(\s*[\d.]+\s*(g|ml)\s*\)\s*$/i);
+  const bare = (m ? m[1] : e.unit).replace(/^1\s+/, '');
+  return m && e.grams ? `${a} × ${bare} (${Math.round(e.grams)} ${m[2]})` : `${a} × ${bare}`;
 }
 
 export function niceNumber(n: number): string {
@@ -205,4 +203,56 @@ export const kcalFromMacros = (p: number, c: number, f: number) => 4 * p + 4 * c
 
 export function serving(label: string, grams: number): Serving {
   return { label, grams };
+}
+
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+
+/** A food from a photo / description estimate, so she can log it again from Recent. */
+export function foodFromEstimate(item: EstimatedItem): Food {
+  const n: Nutrition = { kcal: item.kcal, protein: item.protein, carbs: item.carbs, fat: item.fat };
+  if (item.grams >= 5) {
+    const f = 100 / item.grams;
+    return {
+      key: `est:${slug(item.name)}`,
+      name: item.name,
+      source: 'custom',
+      per100: { kcal: Math.round(n.kcal * f), protein: r1((n.protein ?? 0) * f), carbs: r1((n.carbs ?? 0) * f), fat: r1((n.fat ?? 0) * f) },
+      base: 'g',
+      servings: [{ label: clipLabel(`${item.portion || '1 portion'} (${Math.round(item.grams)} g)`), grams: item.grams }],
+      defaultServing: 0,
+    };
+  }
+  return portionFood(`est:${slug(item.name)}`, item.name, n, item.portion || '1 portion');
+}
+
+/** A food that only comes as one portion (quick adds): 1 portion = the numbers given. */
+export function portionFood(key: string, name: string, n: Nutrition, label = '1 portion'): Food {
+  return { key, name, source: 'custom', per100: n, base: 'g', servings: [{ label: clipLabel(label), grams: 100 }], defaultServing: 0 };
+}
+
+const clipLabel = (s: string) => (s.length > 40 ? s.slice(0, 39) + '…' : s);
+
+/** Quick add: just calories (and macros if she knows them). */
+export function quickEntry(
+  q: { name?: string; kcal: number; protein?: number | null; carbs?: number | null; fat?: number | null },
+  meal: Meal,
+  date: string,
+): FoodEntry {
+  const name = q.name?.trim() || 'Quick add';
+  return {
+    id: newId(),
+    log_date: date,
+    meal,
+    name,
+    food_key: null,
+    amount: 1,
+    unit: '1 portion',
+    grams: null,
+    kcal: Math.round(q.kcal),
+    protein_g: q.protein ?? null,
+    carbs_g: q.carbs ?? null,
+    fat_g: q.fat ?? null,
+    source: 'quick',
+    food: q.name?.trim() ? portionFood(`quick:${slug(name)}`, name, { kcal: Math.round(q.kcal), protein: q.protein ?? null, carbs: q.carbs ?? null, fat: q.fat ?? null }) : null,
+  };
 }

@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { AuthUser, Challenge, DailyLog, Profile } from './types';
 import { normaliseLog } from './types';
+import type { EstimatedItem, FoodEntry, Meal, MyFood, SavedMeal } from './foodTypes';
 import { thumbPath } from '../lib/photos';
 
 /**
@@ -43,6 +44,36 @@ export interface Repo {
   /** Short-lived links for showing photos, by path. `thumb` for the small gallery version. */
   photoUrls(paths: string[], thumb?: boolean): Promise<Record<string, string>>;
   deletePhoto(path: string): Promise<void>;
+
+  // Food diary
+  getFoodEntries(from: string, to: string): Promise<FoodEntry[]>;
+  /** Insert or update (by id). */
+  saveFoodEntries(entries: FoodEntry[]): Promise<void>;
+  deleteFoodEntries(ids: string[]): Promise<void>;
+  getMyFoods(): Promise<MyFood[]>;
+  saveMyFoods(foods: MyFood[]): Promise<void>;
+  deleteMyFood(id: string): Promise<void>;
+  getSavedMeals(): Promise<SavedMeal[]>;
+  saveSavedMeal(meal: SavedMeal): Promise<void>;
+  deleteSavedMeal(id: string): Promise<void>;
+  /** Calories and macros for a photo or a description of a meal (server function). */
+  estimateMeal(req: EstimateRequest): Promise<{ items: EstimatedItem[]; note: string }>;
+  /** Open Food Facts through the server function, for when the phone's own request is blocked. */
+  offProxy(action: 'product' | 'search', params: Record<string, string>): Promise<unknown>;
+}
+
+export type EstimateRequest =
+  | { action: 'photo'; meal: Meal; image: string; hint?: string }
+  | { action: 'describe'; meal: Meal; text: string };
+
+/** Why an estimate didn't work, for a helpful message. */
+export class EstimateError extends Error {
+  constructor(
+    public code: 'not_configured' | 'daily_limit' | 'failed' | 'offline' | 'local',
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
 export interface DataExport {
@@ -53,6 +84,9 @@ export interface DataExport {
   daily_logs: DailyLog[];
   /** Progress photos are listed by day; the photos themselves can be saved from the app. */
   progress_photos: { date: string; file: string }[];
+  food_diary: FoodEntry[];
+  my_foods: MyFood[];
+  saved_meals: SavedMeal[];
 }
 
 /** Profile fields the app may change (the database only allows these too; see 0009_security.sql). */
@@ -72,7 +106,52 @@ const PROFILE_EDITABLE = [
   'sex',
   'weight_unit',
   'workout_favorites',
+  'protein_goal_g',
+  'carbs_goal_g',
+  'fat_goal_g',
+  'active_goal_kcal',
 ] as const;
+
+const FOOD_ENTRY_COLUMNS = [
+  'id', 'log_date', 'meal', 'name', 'brand', 'food_key', 'amount', 'unit', 'grams', 'kcal', 'protein_g', 'carbs_g', 'fat_g',
+  'fiber_g', 'sugar_g', 'sat_fat_g', 'salt_g', 'source', 'food', 'created_at',
+] as const;
+
+/** Only the columns the table has, so a stray field can't break a save. */
+function entryRow(e: FoodEntry, userId: string): Record<string, unknown> {
+  const row: Record<string, unknown> = { user_id: userId };
+  for (const k of FOOD_ENTRY_COLUMNS) if (e[k] !== undefined) row[k] = e[k];
+  return row;
+}
+
+const num = (v: unknown) => (v == null ? null : Number(v));
+function normaliseEntry(r: Record<string, unknown>): FoodEntry {
+  return {
+    ...(r as unknown as FoodEntry),
+    amount: Number(r.amount),
+    grams: num(r.grams),
+    kcal: Number(r.kcal),
+    protein_g: num(r.protein_g),
+    carbs_g: num(r.carbs_g),
+    fat_g: num(r.fat_g),
+    fiber_g: num(r.fiber_g),
+    sugar_g: num(r.sugar_g),
+    sat_fat_g: num(r.sat_fat_g),
+    salt_g: num(r.salt_g),
+  };
+}
+
+function estimateMessage(code: EstimateError['code']): string {
+  return code === 'not_configured'
+    ? 'Photo and description logging needs a one-time setup first (see the setup note in Profile).'
+    : code === 'daily_limit'
+      ? 'That’s the most estimates for today. Search or quick add still work.'
+      : code === 'offline'
+        ? 'Couldn’t reach the estimate service. Check the connection and try again.'
+        : code === 'local'
+          ? 'Estimates need an account.'
+          : 'Couldn’t estimate that one. Try again, or search for it instead.';
+}
 
 const PHOTO_BUCKET = 'progress-photos';
 /** Signed photo links last an hour; the app re-signs before they run out. */
@@ -222,6 +301,9 @@ export class SupabaseRepo implements Repo {
       challenges,
       daily_logs: logs.sort((a, b) => a.log_date.localeCompare(b.log_date)),
       progress_photos: photoList(logs),
+      food_diary: (await this.getFoodEntries(...ALL_DATES)).sort((a, b) => a.log_date.localeCompare(b.log_date)),
+      my_foods: await this.getMyFoods(),
+      saved_meals: await this.getSavedMeals(),
     };
   }
 
@@ -296,6 +378,89 @@ export class SupabaseRepo implements Repo {
     check(await this.sb.from('daily_logs').upsert(logs.map((l) => ({ ...l, user_id: uid })), { onConflict: 'user_id,log_date' }));
   }
 
+  async getFoodEntries(from: string, to: string) {
+    const out: FoodEntry[] = [];
+    // Page through, in case a long export asks for thousands of rows.
+    for (let page = 0; page < 50; page++) {
+      const res = await this.sb
+        .from('food_entries')
+        .select('*')
+        .eq('user_id', this.uid())
+        .gte('log_date', from)
+        .lte('log_date', to)
+        .order('created_at', { ascending: true })
+        .range(page * 1000, page * 1000 + 999);
+      const rows = check(res) as Record<string, unknown>[];
+      out.push(...rows.map(normaliseEntry));
+      if (rows.length < 1000) break;
+    }
+    return out;
+  }
+
+  async saveFoodEntries(entries: FoodEntry[]) {
+    if (!entries.length) return;
+    const uid = this.uid();
+    check(await this.sb.from('food_entries').upsert(entries.map((e) => entryRow(e, uid)), { onConflict: 'id' }));
+  }
+
+  async deleteFoodEntries(ids: string[]) {
+    if (!ids.length) return;
+    check(await this.sb.from('food_entries').delete().eq('user_id', this.uid()).in('id', ids));
+  }
+
+  async getMyFoods() {
+    const res = await this.sb.from('my_foods').select('*').eq('user_id', this.uid()).order('last_used', { ascending: false, nullsFirst: false }).limit(500);
+    return (check(res) as MyFood[]).map((f) => ({ ...f, last_amount: num(f.last_amount) }));
+  }
+
+  async saveMyFoods(foods: MyFood[]) {
+    if (!foods.length) return;
+    const uid = this.uid();
+    const rows = foods.map(({ id, key, food, favorite, custom, uses, last_amount, last_unit, last_meal, last_used }) => ({
+      id, user_id: uid, key, food, favorite, custom, uses, last_amount, last_unit, last_meal, last_used,
+    }));
+    check(await this.sb.from('my_foods').upsert(rows, { onConflict: 'user_id,key' }));
+  }
+
+  async deleteMyFood(id: string) {
+    check(await this.sb.from('my_foods').delete().eq('user_id', this.uid()).eq('id', id));
+  }
+
+  async getSavedMeals() {
+    const res = await this.sb.from('saved_meals').select('*').eq('user_id', this.uid()).order('last_used', { ascending: false, nullsFirst: false });
+    return check(res) as SavedMeal[];
+  }
+
+  async saveSavedMeal(m: SavedMeal) {
+    const { id, name, items, uses, last_used } = m;
+    check(await this.sb.from('saved_meals').upsert({ id, user_id: this.uid(), name, items, uses, last_used }, { onConflict: 'id' }));
+  }
+
+  async deleteSavedMeal(id: string) {
+    check(await this.sb.from('saved_meals').delete().eq('user_id', this.uid()).eq('id', id));
+  }
+
+  async estimateMeal(req: EstimateRequest) {
+    const { data, error } = await this.sb.functions.invoke('food', { body: req });
+    if (error) {
+      let code: EstimateError['code'] = 'failed';
+      const ctx = (error as { context?: Response }).context;
+      if (ctx && typeof ctx.status === 'number') {
+        const body = await ctx.json().catch(() => ({}));
+        if (body?.error === 'not_configured') code = 'not_configured';
+        else if (body?.error === 'daily_limit' || ctx.status === 429) code = 'daily_limit';
+      } else code = 'offline';
+      throw new EstimateError(code, estimateMessage(code));
+    }
+    return data as { items: EstimatedItem[]; note: string };
+  }
+
+  async offProxy(action: 'product' | 'search', params: Record<string, string>) {
+    const { data, error } = await this.sb.functions.invoke('food', { body: { action, ...params } });
+    if (error) throw new Error('Open Food Facts couldn’t be reached. Try again in a moment.');
+    return data;
+  }
+
   private photos() {
     return this.sb.storage.from(PHOTO_BUCKET);
   }
@@ -358,6 +523,9 @@ interface LocalState {
   profile: Profile;
   challenges: Challenge[];
   logs: Record<string, DailyLog>;
+  food?: FoodEntry[];
+  myFoods?: MyFood[];
+  meals?: SavedMeal[];
 }
 
 const defaultProfile = (): Profile => ({
@@ -464,6 +632,9 @@ export class LocalRepo implements Repo {
       challenges: s.challenges,
       daily_logs: Object.values(s.logs).map(normaliseLog).sort((a, b) => a.log_date.localeCompare(b.log_date)),
       progress_photos: photoList(Object.values(s.logs)),
+      food_diary: s.food ?? [],
+      my_foods: s.myFoods ?? [],
+      saved_meals: s.meals ?? [],
     };
   }
 
@@ -524,6 +695,72 @@ export class LocalRepo implements Repo {
 
   async saveLogs(logs: DailyLog[]) {
     this.mutate((s) => logs.forEach((l) => (s.logs[l.log_date] = l)));
+  }
+
+  async getFoodEntries(from: string, to: string) {
+    return (this.load().food ?? []).filter((e) => e.log_date >= from && e.log_date <= to);
+  }
+
+  async saveFoodEntries(entries: FoodEntry[]) {
+    this.mutate((s) => {
+      const list = s.food ?? [];
+      for (const e of entries) {
+        const i = list.findIndex((x) => x.id === e.id);
+        if (i >= 0) list[i] = e;
+        else list.push({ ...e, created_at: e.created_at ?? new Date().toISOString() });
+      }
+      s.food = list;
+    });
+  }
+
+  async deleteFoodEntries(ids: string[]) {
+    this.mutate((s) => (s.food = (s.food ?? []).filter((e) => !ids.includes(e.id))));
+  }
+
+  async getMyFoods() {
+    return this.load().myFoods ?? [];
+  }
+
+  async saveMyFoods(foods: MyFood[]) {
+    this.mutate((s) => {
+      const list = s.myFoods ?? [];
+      for (const f of foods) {
+        const i = list.findIndex((x) => x.key === f.key);
+        if (i >= 0) list[i] = f;
+        else list.push(f);
+      }
+      s.myFoods = list;
+    });
+  }
+
+  async deleteMyFood(id: string) {
+    this.mutate((s) => (s.myFoods = (s.myFoods ?? []).filter((f) => f.id !== id)));
+  }
+
+  async getSavedMeals() {
+    return this.load().meals ?? [];
+  }
+
+  async saveSavedMeal(m: SavedMeal) {
+    this.mutate((s) => {
+      const list = s.meals ?? [];
+      const i = list.findIndex((x) => x.id === m.id);
+      if (i >= 0) list[i] = m;
+      else list.push(m);
+      s.meals = list;
+    });
+  }
+
+  async deleteSavedMeal(id: string) {
+    this.mutate((s) => (s.meals = (s.meals ?? []).filter((m) => m.id !== id)));
+  }
+
+  async estimateMeal(): Promise<{ items: EstimatedItem[]; note: string }> {
+    throw new EstimateError('local', estimateMessage('local'));
+  }
+
+  async offProxy(): Promise<unknown> {
+    throw new Error('Open Food Facts couldn’t be reached.');
   }
 
   // Photos are too big for localStorage, so they go in the browser's IndexedDB.

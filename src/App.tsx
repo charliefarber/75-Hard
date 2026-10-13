@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AppDataProvider, useApp } from './data/AppData';
+import { FoodDataProvider } from './data/FoodData';
 import { AuthScreen } from './screens/AuthScreen';
 import { Onboarding } from './screens/Onboarding';
 import { TodayScreen } from './screens/TodayScreen';
@@ -131,7 +132,9 @@ function Main() {
 export default function App() {
   return (
     <AppDataProvider>
-      <Main />
+      <FoodDataProvider>
+        <Main />
+      </FoodDataProvider>
     </AppDataProvider>
   );
 }

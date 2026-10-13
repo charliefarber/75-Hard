@@ -144,7 +144,19 @@ export function Stepper({
   );
 }
 
-export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+export function Sheet({
+  open,
+  onClose,
+  title,
+  children,
+  className,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+  className?: string;
+}) {
   const id = useId();
   const ref = useRef<HTMLDivElement>(null);
   // Keep the latest onClose without re-running the open/close effect. Parents often pass a
@@ -170,7 +182,7 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
   return (
     <>
       <div className="sheet-backdrop" onClick={() => closeRef.current()} />
-      <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={id} ref={ref} tabIndex={-1}>
+      <div className={`sheet${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-labelledby={id} ref={ref} tabIndex={-1}>
         <div className="sheet-grip" />
         <h2 id={id}>{title}</h2>
         {children}
