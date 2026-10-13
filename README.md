@@ -81,7 +81,7 @@ Lifesum has no public API, but it writes the food you log to **Apple Health** as
 There are two ways in:
 
 1. **iPhone app (native, best).** The Capacitor build reads HealthKit directly using [`@capgo/capacitor-health`](https://github.com/Cap-go/capacitor-health). It syncs when the app opens or comes back to the foreground, and when you tap the refresh button.
-2. **Web app (works today).** A browser can't read HealthKit, so an iPhone **Shortcut** reads today's steps and dietary energy and posts them to Supabase (`ingest_health` RPC) with a private token. **Profile → Apple Health → Set up** walks through it and gives copy buttons for the URL, key and token. Run it with a *When Lifesum is closed* automation plus a few *Time of day* ones.
+2. **Web app (works today).** A browser can't read HealthKit, so an iPhone **Shortcut** reads the last 7 days of steps and posts each day, with its date, to Supabase (`ingest_health` RPC) with a private token. **Profile → Apple Health → Set up** walks through it and gives copy buttons for the URL, key and token. Run it with a few *Time of day* automations. (Calories now come from the in-app food diary.)
 
 Both are optional. Everything can be typed in by hand.
 

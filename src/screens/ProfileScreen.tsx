@@ -661,33 +661,30 @@ function ShortcutSheet({ open, onClose, token }: { open: boolean; onClose: () =>
   return (
     <Sheet open={open} onClose={onClose} title="Sync Apple Health with a Shortcut">
       <p style={{ margin: 0, color: 'var(--muted)', lineHeight: 1.5, fontSize: 14 }}>
-        Until this is an App Store app, an iPhone Shortcut can send steps and Lifesum calories from Apple Health. It sends the last 7
-        days each time, so late-evening steps and days the Shortcut didn’t run still get filled in, and each run corrects those days. Set it up once and it runs on its own.
+        Until this is an App Store app, an iPhone Shortcut sends steps from Apple Health. It sends each of the last 7 days with its
+        date, so late-evening steps get filled in and every run corrects those days. Set it up once and it runs on its own.
       </p>
       <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Step n={1}>
-          In <strong>Lifesum → Settings → Apple Health</strong>, turn on writing nutrition data.
+          In the <strong>Shortcuts</strong> app, make a new shortcut. Add <strong>Find Health Samples</strong>: Type{' '}
+          <strong>Steps</strong>, Start Date <strong>is in the last 7 days</strong>, Group By <strong>Day</strong>.
         </Step>
         <Step n={2}>
-          In the <strong>Shortcuts</strong> app, make a new shortcut. Add <strong>Find Health Samples</strong>: Type <strong>Steps</strong>,
-          Start Date <strong>is in the last 7 days</strong>, Group by <strong>Day</strong>.
+          Add <strong>Repeat with Each</strong> (it picks up the Health Samples). Everything below goes inside the repeat.
         </Step>
         <Step n={3}>
-          Add <strong>Repeat with Each</strong> over those samples. Inside the repeat, add <strong>Format Date</strong> of{' '}
-          <strong>Repeat Item › Start Date</strong> (Custom: <code>yyyy-MM-dd</code>).
+          Add <strong>Format Date</strong>. Tap the date, choose <strong>Repeat Item</strong>, then tap it again and pick{' '}
+          <strong>Start Date</strong>. Date Format <strong>Custom</strong>: <code>yyyy-MM-dd</code>.
         </Step>
         <Step n={4}>
-          Still inside the repeat, add <strong>Get Contents of URL</strong>: the URL below, Method <strong>POST</strong>, a header{' '}
-          <code>apikey</code> with the key below, and a JSON body with <code>p_token</code> (text), <code>p_steps</code> (number:{' '}
-          <strong>Repeat Item › Value</strong>) and <code>p_date</code> (text: <strong>Formatted Date</strong>).
+          Add <strong>Get Contents of URL</strong> with the URL below. Method <strong>POST</strong>; header <code>apikey</code> = the
+          key below; Request Body <strong>JSON</strong> with <code>p_token</code> (Text: the token below), <code>p_steps</code>{' '}
+          (Number: <strong>Repeat Item</strong>, tapped and set to <strong>Value</strong>) and <code>p_date</code> (Text:{' '}
+          <strong>Formatted Date</strong>).
         </Step>
         <Step n={5}>
-          After <strong>End Repeat</strong>, do steps 2–4 again with Type <strong>Dietary Energy</strong>, sending <code>p_calories</code>{' '}
-          instead of <code>p_steps</code>.
-        </Step>
-        <Step n={6}>
-          In <strong>Automation</strong>, add <strong>App → Lifesum → Is Closed</strong> and a few <strong>Time of Day</strong> ones
-          (say 08:00, 12:00, 18:00, 22:00). Pick this shortcut and choose <strong>Run Immediately</strong>.
+          In <strong>Automation</strong>, add a few <strong>Time of Day</strong> ones (say 08:00, 12:00, 18:00, 22:00), pick this
+          shortcut and choose <strong>Run Immediately</strong>.
         </Step>
       </ol>
       <CopyField label="URL" value={endpoint} />
