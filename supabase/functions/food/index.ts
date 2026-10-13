@@ -29,9 +29,9 @@ const OFF_UA = '75Hard/1.0 (https://github.com/charliefarber/75-Hard)';
 const OFF_FIELDS =
   'code,product_name,product_name_en,generic_name,brands,quantity,product_quantity,serving_size,serving_quantity,nutriments,image_front_small_url,image_small_url';
 
-const ORIGINS = ['https://hard-75.pages.dev', 'https://hard-75.netlify.app', 'http://localhost:5173', 'http://localhost:4181', 'capacitor://localhost', 'http://localhost'];
-/** The Cloudflare Pages site, its preview builds, and the name Cloudflare gives it if hard-75 was taken. */
-const PAGES = /^https:\/\/([a-z0-9-]+\.)?hard-75(-[a-z0-9]+)?\.pages\.dev$/;
+const ORIGINS = ['https://swag-75.pages.dev', 'https://hard-75.pages.dev', 'https://hard-75.netlify.app', 'http://localhost:5173', 'http://localhost:4181', 'capacitor://localhost', 'http://localhost'];
+/** The Cloudflare Pages site (swag-75), its preview builds, and the older hard-75 name. */
+const PAGES = /^https:\/\/([a-z0-9-]+\.)?(swag|hard)-75(-[a-z0-9]+)?\.pages\.dev$/;
 
 function corsFor(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') ?? '';

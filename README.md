@@ -1,6 +1,6 @@
 # 75 Hard
 
-**Live:** https://hard-75.pages.dev (Cloudflare Pages; the old https://hard-75.netlify.app stays on the version from 13 October)
+**Live:** https://swag-75.pages.dev (Cloudflare Pages; the old https://hard-75.netlify.app stays on the version from 13 October)
 
 A simple, good-looking daily tracker for the 75 Hard challenge. It's styled after Lifesum's forest green, and it's built as a React app that ships as a website now and as an iPhone app later.
 
@@ -108,7 +108,7 @@ npm run build      # static site in dist/
 
 ### 3. Put it on her phone (today)
 
-It's hosted on **Cloudflare Pages**, which is free with no charge per deploy (Netlify's free plan now allows about 20 deploys a month). Set up once: Cloudflare dashboard → **Workers & Pages → Create → Pages → Connect to Git** → pick this repo → project name `hard-75` → build command `npm run build`, output directory `dist` → **Save and Deploy**. Every push to `main` then publishes automatically. The committed `.env` supplies the Supabase settings, `.node-version` picks Node 22, and `public/_headers` sets the security headers. Then open the site in Safari and use **Share → Add to Home Screen**. It runs full-screen with its own icon.
+It's hosted on **Cloudflare Pages**, which is free with no charge per deploy (Netlify's free plan now allows about 20 deploys a month). Set up once: Cloudflare dashboard → **Workers & Pages → Create → Pages → Connect to Git** → pick this repo → project name `swag-75` → Framework preset **React (Vite)**, build command `npm run build`, build output directory `dist` → **Save and Deploy**. Every push to `main` then publishes automatically. The committed `.env` supplies the Supabase settings, `.node-version` picks Node 22, and `public/_headers` sets the security headers. Then open the site in Safari and use **Share → Add to Home Screen**. It runs full-screen with its own icon.
 
 ### 4. Make it a real iPhone app (later)
 
