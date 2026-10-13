@@ -49,6 +49,9 @@
 .today .section-label span { font-size: 12.5px; letter-spacing: 0; text-transform: none; font-weight: 700; color: var(--faint); }
 .card-amount { font-size: 14px; color: var(--muted); }
 .card-amount strong { font-size: 20px; font-weight: 800; font-feature-settings: 'tnum' 0; }
+.water-add { flex: 1; min-width: 0; height: 48px; border-radius: 14px; background: var(--water-tint); color: var(--water); font-size: 15px; white-space: nowrap; }
+.water-ml { font-weight: 600; opacity: 0.75; }
+@media (max-width: 360px) { .water-ml { display: none; } }
 .notes-label { display: flex; align-items: center; gap: 10px; color: var(--ink); font-size: 16px; font-weight: 700; }
 .notice-card { background: #fff8e8; border: 1.5px solid #f5dfa8; }
 .notice-text { margin: 0; line-height: 1.5; color: #6b4e12; }

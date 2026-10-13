@@ -477,14 +477,10 @@ export function TodayScreen({
             })}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              className="btn"
-              style={{ flex: 1, height: 48, borderRadius: 14, background: 'var(--water-tint)', color: 'var(--water)', fontSize: 15 }}
-              onClick={() => (tap(), set({ water_ml: log.water_ml + GLASS_ML }))}
-            >
+            <button className="btn water-add" onClick={() => (tap(), set({ water_ml: log.water_ml + GLASS_ML }))}>
               <Glass fill={1} size={24} />
               Add a glass
-              <span style={{ fontWeight: 600, opacity: 0.75 }}>· {GLASS_ML} ml</span>
+              <span className="water-ml">· {GLASS_ML} ml</span>
             </button>
             <button
               className="icon-btn"
