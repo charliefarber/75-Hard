@@ -34,6 +34,8 @@ interface FoodState {
   logMeal(meal: SavedMeal, date: string, slot: Meal): Promise<FoodEntry[]>;
   deleteMeal(id: string): Promise<void>;
   estimate(req: EstimateRequest): Promise<{ items: EstimatedItem[]; note: string }>;
+  /** Photo / description estimates are available (null until known; assume yes). */
+  ai: boolean | null;
   offProxy: OffProxy;
 }
 
@@ -59,6 +61,7 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
   const [myFoods, setMyFoods] = useState<MyFood[]>([]);
   const [savedMeals, setSavedMeals] = useState<SavedMeal[]>([]);
   const [ready, setReady] = useState(false);
+  const [ai, setAi] = useState<boolean | null>(null);
   const loaded = useRef(new Set<string>());
   const byDateRef = useRef(byDate);
   byDateRef.current = byDate;
@@ -72,7 +75,21 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
     setMyFoods([]);
     setSavedMeals([]);
     setReady(false);
+    setAi(null);
   }, [user?.id]);
+
+  // Are photo / description estimates switched on? Asked once per session.
+  useEffect(() => {
+    if (status !== 'ready' || !user) return;
+    let live = true;
+    repo
+      .foodStatus()
+      .then((s) => live && s && setAi(s.ai))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [status, user, repo]);
 
   const ensure = useCallback(
     async (from: string, to: string) => {
@@ -391,9 +408,10 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
       logMeal,
       deleteMeal,
       estimate,
+      ai,
       offProxy,
     }),
-    [ready, entriesFor, isLoaded, ensure, myFoods, savedMeals, add, update, remove, restore, toggleFavorite, saveCustomFood, forgetFood, saveMeal, logMeal, deleteMeal, estimate, offProxy],
+    [ready, entriesFor, isLoaded, ensure, myFoods, savedMeals, add, update, remove, restore, toggleFavorite, saveCustomFood, forgetFood, saveMeal, logMeal, deleteMeal, estimate, ai, offProxy],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

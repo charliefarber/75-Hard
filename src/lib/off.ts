@@ -73,7 +73,10 @@ export function foodFromOff(p: Json | null | undefined): Food | null {
   const servings: Serving[] = [];
   if (servingQty && servingQty > 0 && servingQty <= 2000) {
     const raw = text(p.serving_size);
-    const label = raw && /\d/.test(raw) && raw.length <= 30 ? (/[(]/.test(raw) || /^\d/.test(raw) ? raw : `1 ${raw}`) : `1 serving (${round(servingQty)} ${base})`;
+    // "170 g" on its own reads oddly next to an amount ("1 × 170 g"), so call it a serving.
+    const justWeight = /^[\d.,\s]+(g|gr|grams?|ml)\.?$/i.test(raw);
+    const label =
+      raw && !justWeight && /\d/.test(raw) && raw.length <= 30 ? (/[(]/.test(raw) || /^\d/.test(raw) ? raw : `1 ${raw}`) : `1 serving (${round(servingQty)} ${base})`;
     servings.push({ label: clip(/\d\s*(g|ml)\b/i.test(label) ? label : `${label} (${round(servingQty)} ${base})`, 40), grams: servingQty });
   }
   const packQty = num(p.product_quantity);

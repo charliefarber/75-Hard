@@ -4,13 +4,16 @@ import { useApp } from '../data/AppData';
 import type { Profile, WeightUnit } from '../data/types';
 import { workoutGoal } from '../data/types';
 import { formatMinutes } from '../lib/workouts';
-import { ageOn, weightUnitFor } from '../lib/body';
+import { ageOn, bodyStats, weightUnitFor } from '../lib/body';
+import { defaultActiveGoal, restingDay } from '../lib/energy';
+import { macroGoals } from '../lib/nutrition';
+import { FoodGoalsSheet } from '../components/food/GoalsSheet';
 import { supabaseAnonKey, supabaseUrl } from '../data/repo';
 import { litres, summarise } from '../lib/challenge';
 import { Sheet, fmt } from '../components/ui';
 import { IconChevron, IconCopy, IconHeart, IconLeaf } from '../components/Icons';
 
-type GoalKey = 'water_goal_ml' | 'step_goal' | 'calorie_goal' | 'workout_goal_minutes' | 'reading_goal_pages';
+type GoalKey = 'water_goal_ml' | 'step_goal' | 'workout_goal_minutes' | 'reading_goal_pages';
 
 export const WATER_PRESETS = [
   { ml: 2000, label: '2 L' },
@@ -23,7 +26,6 @@ export const WATER_PRESETS = [
 const GOALS: { key: GoalKey; label: string; unit: string; show: (p: Profile) => string }[] = [
   { key: 'water_goal_ml', label: 'Water', unit: 'ml', show: (p) => `${litres(p.water_goal_ml, 1)} L` },
   { key: 'step_goal', label: 'Steps', unit: 'a week', show: (p) => `${fmt(p.step_goal * 7)} a week` },
-  { key: 'calorie_goal', label: 'Calorie target', unit: 'kcal', show: (p) => (p.calorie_goal ? `${fmt(p.calorie_goal)} kcal` : 'Not set') },
   { key: 'workout_goal_minutes', label: 'Workouts', unit: 'min a day', show: (p) => `${formatMinutes(workoutGoal(p))} a day` },
   { key: 'reading_goal_pages', label: 'Reading', unit: 'pages', show: (p) => `${p.reading_goal_pages} pages` },
 ];
@@ -31,6 +33,7 @@ const GOALS: { key: GoalKey; label: string; unit: string; show: (p: Profile) => 
 export function ProfileScreen({ focus }: { focus?: 'about' }) {
   const { repo, user, profile, challenge, logs, today, health, connectHealth, syncHealth, updateProfile, signOut, restartChallenge, history, changeStartDate, exportData } = useApp();
   const [editing, setEditing] = useState<GoalKey | 'name' | null>(null);
+  const [foodGoals, setFoodGoals] = useState(false);
   const [heightOpen, setHeightOpen] = useState(false);
   const about = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -46,6 +49,10 @@ export function ProfileScreen({ focus }: { focus?: 'about' }) {
   const day = Math.max(1, summarise(challenge, logs, profile, today).currentDay);
   const attempt = history.findIndex((c) => c.id === challenge.id) + 1 || 1;
   const initial = (profile.display_name || user?.email || '?').charAt(0).toUpperCase();
+  const body = bodyStats(profile, logs, today);
+  const activeDefault = defaultActiveGoal(profile, body);
+  const activeGoal = profile.active_goal_kcal || activeDefault;
+  const macros = macroGoals(profile);
 
   return (
     <div className="screen page-pad">
@@ -119,7 +126,7 @@ export function ProfileScreen({ focus }: { focus?: 'about' }) {
           </span>
           <div className="row-text">
             <span className="row-title">Lifesum</span>
-            <span className="row-sub">Calories come in through Apple Health</span>
+            <span className="row-sub">Optional now. Its calories still come in through Apple Health until you log food here.</span>
           </div>
           <span className="chip">Via Health</span>
         </div>
@@ -161,6 +168,31 @@ export function ProfileScreen({ focus }: { focus?: 'about' }) {
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: 'var(--green-ink)' }}>
               {g.show(profile)}
+              <IconChevron size={16} style={{ color: '#9aa59d' }} />
+            </span>
+          </button>
+        ))}
+      </section>
+
+      <span className="section-label">Food & calories</span>
+      <section className="card list">
+        {[
+          { id: 'kcal', label: 'Calorie target', value: profile.calorie_goal ? `${fmt(profile.calorie_goal)} kcal` : 'Not set' },
+          {
+            id: 'macros',
+            label: 'Macros',
+            value: macros ? `P ${macros.protein} · C ${macros.carbs} · F ${macros.fat} g` : 'Not set',
+          },
+          { id: 'active', label: 'Active calories', value: `${fmt(activeGoal)} kcal${profile.active_goal_kcal ? '' : ' (auto)'}` },
+        ].map((r, i) => (
+          <button key={r.id} className="row" style={{ ...ROW_BTN, borderBottomWidth: i === 2 ? 0 : 1 }} onClick={() => setFoodGoals(true)}>
+            <span className="row-text">
+              <span className="row-title" style={{ fontWeight: 600 }}>
+                {r.label}
+              </span>
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: 'var(--green-ink)' }}>
+              {r.value}
               <IconChevron size={16} style={{ color: '#9aa59d' }} />
             </span>
           </button>
@@ -292,6 +324,18 @@ export function ProfileScreen({ focus }: { focus?: 'about' }) {
         onSave={(patch) => {
           updateProfile(patch);
           setEditing(null);
+        }}
+      />
+
+      <FoodGoalsSheet
+        open={foodGoals}
+        profile={profile}
+        maintenance={Math.round((restingDay(body).kcal + activeGoal) / 10) * 10}
+        activeDefault={activeDefault}
+        onClose={() => setFoodGoals(false)}
+        onSave={(patch) => {
+          updateProfile(patch);
+          setFoodGoals(false);
         }}
       />
 
@@ -474,7 +518,6 @@ function GoalSheet({
       return;
     }
     const n = parseInt(value, 10);
-    if (field === 'calorie_goal') return onSave({ calorie_goal: n > 0 ? n : null });
     if (field === 'step_goal') return n > 0 ? onSave({ step_goal: Math.round(n / 7) }) : undefined;
     if (field === 'workout_goal_minutes') return n >= 10 && n <= 600 ? onSave({ workout_goal_minutes: n }) : undefined;
     if (n > 0) onSave({ [field]: n } as Partial<Profile>);
@@ -533,11 +576,6 @@ function GoalSheet({
               Any mix of workouts that adds up to this completes the day. 75 Hard’s two 45-minute workouts make 90.
             </p>
           </>
-        )}
-        {field === 'calorie_goal' && (
-          <p className="card-sub" style={{ margin: 0 }}>
-            Match your Lifesum daily goal. Leave empty for no target.
-          </p>
         )}
         <button className="btn btn-primary btn-block" type="submit">
           Save

@@ -86,8 +86,9 @@
 .back-btn { align-self: flex-start; display: inline-flex; align-items: center; gap: 2px; margin: -10px 0 -6px -4px; }
 .meal-pick button { font-size: 13px; padding: 0 4px; }
 .food-search { position: sticky; top: -10px; z-index: 2; background: #fff; margin: -4px -20px 0; padding: 4px 20px 6px; }
-.search-scan { width: 40px; height: 40px; border-radius: 12px; border: 0; background: var(--forest); color: #fff; display: flex; align-items: center; justify-content: center; }
+.search-scan { width: 38px; height: 38px; border-radius: 11px; border: 0; background: #fff; color: var(--forest); display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 2px rgba(20, 35, 26, 0.1); }
 .log-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.log-actions.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .log-action {
   border: 0; background: var(--surface-2); border-radius: 16px; padding: 10px 4px 9px; display: flex; flex-direction: column; align-items: center; gap: 6px;
   font-size: 12px; font-weight: 700; color: var(--ink-2); transition: transform 0.15s var(--ease);
@@ -194,3 +195,25 @@
 .scanner-type { display: flex; gap: 8px; }
 .scanner-type input { flex: 1; min-width: 0; height: 52px; border-radius: 16px; border: 0; padding: 0 16px; font-size: 20px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink); }
 .scanner-type .btn { height: 52px; }
+
+/* ---------- Calories & macros goals ---------- */
+
+.goals-form { display: flex; flex-direction: column; gap: 20px; }
+.goal-block { display: flex; flex-direction: column; gap: 10px; }
+.goal-kcal { justify-content: center; }
+.goal-kcal input { font-size: 40px; }
+.goal-hint { margin: 0; line-height: 1.5; }
+.goal-hint strong { color: var(--ink); }
+.goal-hint.warn { color: #b4570f; }
+.goal-hint .link-btn { padding: 0; font-size: 12px; }
+.goal-grams { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.goal-gram { background: var(--surface-2); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.goal-gram strong { font-size: 17px; font-weight: 800; font-feature-settings: 'tnum' 0; }
+.goal-gram > span { font-size: 12px; color: var(--muted); font-weight: 600; }
+.goal-gram .dot { margin-bottom: 4px; }
+
+.ring-btn { border: 0; background: none; padding: 0; border-radius: 50%; color: inherit; flex: none; transition: transform 0.15s var(--ease); }
+.ring-btn:active { transform: scale(0.96); }
+.ring-small.warn { color: #b4570f; }
+.targets-link { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 0; margin-top: -4px; color: var(--muted); }
+.targets-set { align-self: flex-start; background: var(--mint-tint); color: var(--green-ink); }

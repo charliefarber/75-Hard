@@ -60,6 +60,8 @@ export interface Repo {
   estimateMeal(req: EstimateRequest): Promise<{ items: EstimatedItem[]; note: string }>;
   /** Open Food Facts through the server function, for when the phone's own request is blocked. */
   offProxy(action: 'product' | 'search', params: Record<string, string>): Promise<unknown>;
+  /** Whether photo / description estimates are switched on (null: couldn't tell). */
+  foodStatus(): Promise<{ ai: boolean } | null>;
 }
 
 export type EstimateRequest =
@@ -143,7 +145,7 @@ function normaliseEntry(r: Record<string, unknown>): FoodEntry {
 
 function estimateMessage(code: EstimateError['code']): string {
   return code === 'not_configured'
-    ? 'Photo and description logging needs a one-time setup first (see the setup note in Profile).'
+    ? 'Photo and description logging isn’t switched on yet. Search, scan or quick add work in the meantime.'
     : code === 'daily_limit'
       ? 'That’s the most estimates for today. Search or quick add still work.'
       : code === 'offline'
@@ -461,6 +463,11 @@ export class SupabaseRepo implements Repo {
     return data;
   }
 
+  async foodStatus() {
+    const { data, error } = await this.sb.functions.invoke('food', { body: { action: 'status' } });
+    return error || typeof data?.ai !== 'boolean' ? null : { ai: data.ai as boolean };
+  }
+
   private photos() {
     return this.sb.storage.from(PHOTO_BUCKET);
   }
@@ -757,6 +764,10 @@ export class LocalRepo implements Repo {
 
   async estimateMeal(): Promise<{ items: EstimatedItem[]; note: string }> {
     throw new EstimateError('local', estimateMessage('local'));
+  }
+
+  async foodStatus() {
+    return { ai: false };
   }
 
   async offProxy(): Promise<unknown> {

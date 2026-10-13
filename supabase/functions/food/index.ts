@@ -4,6 +4,7 @@
 //   describe  estimate a meal from a description  }  doesn't train on or keep what's sent)
 //   product   Open Food Facts barcode lookup      } fallback for when the phone's own request
 //   search    Open Food Facts product search      }  to Open Food Facts is blocked
+//   status    whether estimates are switched on (so the app can hide them until they are)
 //
 // Only signed-in users can call it (verify_jwt + a user check below). Estimates are capped at
 // DAILY_LIMIT a day per person. Photos are passed straight through and never stored.
@@ -135,6 +136,8 @@ Deno.serve(async (req: Request) => {
   const meal = typeof body.meal === 'string' ? body.meal : 'meal';
 
   switch (body.action) {
+    case 'status':
+      return reply(200, { ai: configured() });
     case 'photo': {
       const image = typeof body.image === 'string' ? body.image : '';
       if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image) || image.length > MAX_IMAGE_CHARS)

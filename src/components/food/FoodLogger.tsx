@@ -24,11 +24,11 @@ import {
 import { photoDataUrl } from '../../lib/photos';
 import { success, tap } from '../../lib/haptics';
 import { Sheet, fmt } from '../ui';
-import { IconCamera, IconCheck, IconChevronLeft, IconMinus, IconPlus, IconSearch, IconStar, IconX } from '../Icons';
+import { IconCamera, IconCheck, IconMinus, IconPlus, IconSearch, IconStar, IconX } from '../Icons';
 import { BarcodeScanner } from './BarcodeScanner';
 import { FoodThumb, MacroLine, g1 } from './bits';
 
-export type LoggerMode = 'search' | 'scan' | 'photo' | 'describe' | 'quick';
+export type LoggerMode = 'search' | 'scan' | 'describe' | 'quick';
 
 type Review = (EstimatedItem & { on: boolean; scale: number })[];
 
@@ -55,6 +55,7 @@ export function FoodLogger({
   meal: initialMeal,
   mode = 'search',
   edit,
+  photo,
   onClose,
   onDeleted,
 }: {
@@ -63,6 +64,8 @@ export function FoodLogger({
   meal: Meal;
   mode?: LoggerMode;
   edit?: FoodEntry | null;
+  /** A meal photo picked before the sheet opened (the camera button on the Food tab). */
+  photo?: File | null;
   onClose: () => void;
   /** After an entry is deleted from the edit view (for an undo toast). */
   onDeleted?: (removed: FoodEntry[]) => void;
@@ -93,7 +96,7 @@ export function FoodLogger({
     else if (mode === 'describe') setScreen({ name: 'describe' });
     else setScreen({ name: 'home' });
     if (!edit && mode === 'scan') setScanning(true);
-    if (!edit && mode === 'photo') setTimeout(() => photoInput.current?.click(), 50);
+    if (!edit && photo) onPhoto(photo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -178,15 +181,16 @@ export function FoodLogger({
 
   return (
     <>
-      <Sheet open={open && !scanning} onClose={onClose} title={title} className="sheet-tall food-sheet">
+      <Sheet
+        open={open && !scanning}
+        onClose={onClose}
+        title={title}
+        className="sheet-tall food-sheet"
+        onBack={screen.name !== 'home' && screen.name !== 'working' && !(screen.name === 'detail' && screen.editing) && !(screen.name === 'quick' && screen.editing) ? () => go({ name: 'home' }) : undefined}
+      >
         <div ref={top} style={{ height: 0, marginTop: -16 }} aria-hidden="true" />
-        {screen.name !== 'home' && screen.name !== 'working' && !(screen.name === 'detail' && screen.editing) && !(screen.name === 'quick' && screen.editing) && (
-          <button type="button" className="link-btn back-btn" onClick={() => go({ name: 'home' })}>
-            <IconChevronLeft size={16} /> Back
-          </button>
-        )}
 
-        {!(screen.name === 'detail' && screen.editing) && !(screen.name === 'quick' && screen.editing) && screen.name !== 'working' && (
+        {screen.name === 'home' && (
           <div className="segmented meal-pick" role="group" aria-label="Meal">
             {MEALS.map((m) => (
               <button key={m.id} type="button" aria-pressed={meal === m.id} onClick={() => (tap(), setMeal(m.id))}>
@@ -211,6 +215,7 @@ export function FoodLogger({
             onDescribe={(text) => go({ name: 'describe', text })}
             onQuickAdd={() => go({ name: 'quick' })}
             onCustom={(n) => go({ name: 'custom', foodName: n })}
+            ai={food.ai !== false}
             onMeal={async (m) => {
               tap();
               const entries = await food.logMeal(m, date, meal).catch(() => null);
@@ -401,6 +406,7 @@ function Home({
   onQuickAdd,
   onCustom,
   onMeal,
+  ai,
   offProxy,
 }: {
   query: string;
@@ -417,6 +423,8 @@ function Home({
   onQuickAdd: () => void;
   onCustom: (name?: string) => void;
   onMeal: (m: SavedMeal) => void;
+  /** Photo and "describe it" estimates are available. */
+  ai: boolean;
   offProxy: Parameters<typeof searchProducts>[1];
 }) {
   const q = query.trim();
@@ -456,7 +464,8 @@ function Home({
     .filter((f) => !f.favorite && f.last_used)
     .sort((a, b) => Number(b.last_meal === meal) - Number(a.last_meal === meal) || (b.last_used ?? '').localeCompare(a.last_used ?? ''))
     .slice(0, 12);
-  const starters = !myFoods.length ? BASICS.filter((b) => STARTERS.includes(b.key)) : [];
+  // Popular basics until her own list has filled out a bit (never repeating what's already in it).
+  const starters = myFoods.length < 6 ? BASICS.filter((b) => STARTERS.includes(b.key) && !myFoods.some((m) => m.key === b.key)) : [];
   const lastOf = (key: string) => myFoods.find((f) => f.key === key) ?? null;
 
   return (
@@ -488,7 +497,7 @@ function Home({
       </div>
 
       {!q && (
-        <div className="log-actions">
+        <div className={`log-actions${ai ? '' : ' two'}`}>
           <button type="button" className="log-action" onClick={onScan}>
             <span className="log-action-icon scan" aria-hidden="true">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -497,21 +506,25 @@ function Home({
             </span>
             Scan
           </button>
-          <button type="button" className="log-action" onClick={onPhoto}>
-            <span className="log-action-icon photo" aria-hidden="true">
-              <IconCamera size={22} />
-            </span>
-            Photo
-          </button>
-          <button type="button" className="log-action" onClick={() => onDescribe()}>
-            <span className="log-action-icon describe" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" />
-                <path d="M13.5 6.5l4 4" />
-              </svg>
-            </span>
-            Describe
-          </button>
+          {ai && (
+            <>
+              <button type="button" className="log-action" onClick={onPhoto}>
+                <span className="log-action-icon photo" aria-hidden="true">
+                  <IconCamera size={22} />
+                </span>
+                Photo
+              </button>
+              <button type="button" className="log-action" onClick={() => onDescribe()}>
+                <span className="log-action-icon describe" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" />
+                    <path d="M13.5 6.5l4 4" />
+                  </svg>
+                </span>
+                Describe
+              </button>
+            </>
+          )}
           <button type="button" className="log-action" onClick={onQuickAdd}>
             <span className="log-action-icon quick" aria-hidden="true">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -595,15 +608,17 @@ function Home({
       )}
       {q && (
         <div className="not-found-actions">
-          <button type="button" className="pick-custom" onClick={() => onDescribe(q)}>
-            <span className="act-icon" style={{ width: 40, height: 40, borderRadius: 13 }} aria-hidden="true">
-              ✨
-            </span>
-            <span className="row-text">
-              <span className="row-title">Estimate “{q}”</span>
-              <span className="row-sub">Works out calories and macros from the description</span>
-            </span>
-          </button>
+          {ai && (
+            <button type="button" className="pick-custom" onClick={() => onDescribe(q)}>
+              <span className="act-icon" style={{ width: 40, height: 40, borderRadius: 13 }} aria-hidden="true">
+                ✨
+              </span>
+              <span className="row-text">
+                <span className="row-title">Estimate “{q}”</span>
+                <span className="row-sub">Works out calories and macros from the description</span>
+              </span>
+            </button>
+          )}
           <button type="button" className="pick-custom" onClick={() => onCustom(q)}>
             <span className="act-icon" style={{ width: 40, height: 40, borderRadius: 13 }} aria-hidden="true">
               <IconPlus size={20} />
@@ -869,7 +884,14 @@ function QuickAdd({
     >
       <label className="dur-value quick-kcal">
         <span className="sr-only">Calories</span>
-        <input inputMode="numeric" autoFocus={!editing} placeholder="0" value={kcal} onChange={(e) => setKcal(e.target.value.replace(/\D/g, '').slice(0, 5))} />
+        <input
+          inputMode="numeric"
+          autoFocus={!editing}
+          placeholder="0"
+          value={kcal}
+          onChange={(e) => setKcal(e.target.value.replace(/\D/g, '').slice(0, 5))}
+          style={{ width: `${Math.max(1, kcal.length) + 0.6}ch` }}
+        />
         <span>kcal</span>
       </label>
       <label className="field">

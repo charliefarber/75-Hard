@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import { useApp } from '../data/AppData';
 import { useFood } from '../data/FoodData';
@@ -6,7 +6,9 @@ import type { FoodEntry, Meal } from '../data/foodTypes';
 import { MEALS } from '../data/foodTypes';
 import { toISODate } from '../lib/challenge';
 import { bodyStats } from '../lib/body';
-import { dayEnergy } from '../lib/energy';
+import { dayEnergy, defaultActiveGoal, restingDay } from '../lib/energy';
+import { useMinuteTick } from '../lib/useMinuteTick';
+import { FoodGoalsSheet } from '../components/food/GoalsSheet';
 import { amountText, byMeal, macroGoals, mealForTime, newId, totals } from '../lib/nutrition';
 import { Ring, Sheet, Toast, fmt } from '../components/ui';
 import { IconCamera, IconChevron, IconChevronLeft, IconPlus, IconSearch } from '../components/Icons';
@@ -17,17 +19,21 @@ import '../styles/food.css';
 
 /** The food diary for the selected day: totals and macros up top, then each meal. */
 export function FoodScreen({ date, setDate }: { date: string; setDate: (d: string) => void }) {
-  const { profile, logs, today } = useApp();
+  const { profile, logs, today, updateProfile } = useApp();
+  const [goalsOpen, setGoalsOpen] = useState(false);
+  const now = useMinuteTick(date === today);
   const food = useFood();
-  const [logger, setLogger] = useState<null | { meal: Meal; mode: LoggerMode; edit?: FoodEntry }>(null);
+  const [logger, setLogger] = useState<null | { meal: Meal; mode: LoggerMode; edit?: FoodEntry; photo?: File }>(null);
+  const photoInput = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState<null | { meal: Meal; name: string }>(null);
   const [toast, setToast] = useState<null | { message: string; undo?: () => void }>(null);
   const closeToast = useCallback(() => setToast(null), []);
   const yesterday = toISODate(addDays(parseISO(date), -1));
 
+  const { ensure } = food;
   useEffect(() => {
-    food.ensure(yesterday, date);
-  }, [food, yesterday, date]);
+    ensure(yesterday, date);
+  }, [ensure, yesterday, date]);
 
   const entries = food.entriesFor(date);
   const meals = useMemo(() => byMeal(entries), [entries]);
@@ -38,7 +44,9 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
   const log = logs[date];
   const eaten = entries.length ? t.kcal : log?.calories ?? 0;
   const goals = macroGoals(profile);
-  const energy = dayEnergy(log, bodyStats(profile, logs, date), { date, today });
+  const body = bodyStats(profile, logs, date);
+  const energy = dayEnergy({ workouts: log?.workouts ?? [], steps: log?.steps ?? null, calories: eaten }, body, { date, today, now });
+  const activeDefault = defaultActiveGoal(profile, body);
   const goal = profile.calorie_goal;
   const left = goal ? goal - eaten : null;
   const isToday = date === today;
@@ -68,18 +76,12 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
 
       <section className="card food-summary" aria-label="Calories and macros">
         <div className="food-summary-top">
-          <Ring
-            size={124}
-            stroke={11}
-            value={eaten}
-            max={goal ?? Math.max(energy.total, eaten, 1)}
-            color={left !== null && left < 0 ? 'var(--steps)' : 'var(--green)'}
-            track="var(--mint-tint)"
-            label={goal ? `${fmt(eaten)} of ${fmt(goal)} kcal eaten` : `${fmt(eaten)} kcal eaten`}
-          >
-            <span className="ring-big">{fmt(Math.abs(left ?? eaten))}</span>
-            <span className="ring-small">{left === null ? 'kcal eaten' : left < 0 ? 'kcal over' : 'kcal left'}</span>
-          </Ring>
+          <button type="button" className="ring-btn" onClick={() => (tap(), setGoalsOpen(true))} aria-label={`${goal ? `${fmt(eaten)} of ${fmt(goal)} kcal eaten` : `${fmt(eaten)} kcal eaten`}. Calorie and macro targets`}>
+            <Ring size={124} stroke={11} value={goal ? eaten : 0} max={goal ?? 1} color="var(--green)" track="var(--mint-tint)" label="">
+              <span className="ring-big">{fmt(Math.abs(left ?? eaten))}</span>
+              <span className={`ring-small${left !== null && left < 0 ? ' warn' : ''}`}>{left === null ? 'kcal eaten' : left < 0 ? 'kcal over' : 'kcal left'}</span>
+            </Ring>
+          </button>
           <div className="food-stats">
             <Stat label="Eaten" value={fmt(eaten)} sub={goal ? `of ${fmt(goal)}` : undefined} />
             <Stat label="Burned" value={fmt(energy.total)} sub={energy.partial ? 'so far' : undefined} />
@@ -91,6 +93,16 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
           </div>
         </div>
         <MacroBars t={entries.length ? t : { ...t, kcal: eaten }} goals={goals} />
+        {goal ? (
+          <button type="button" className="link-btn targets-link" onClick={() => (tap(), setGoalsOpen(true))}>
+            Targets: {fmt(goal)} kcal{goals ? ` · P ${goals.protein} · C ${goals.carbs} · F ${goals.fat} g` : ''}
+            <IconChevron size={14} />
+          </button>
+        ) : (
+          <button type="button" className="btn btn-soft btn-sm targets-set" onClick={() => (tap(), setGoalsOpen(true))}>
+            Set a calorie target
+          </button>
+        )}
         {!entries.length && log?.calories ? (
           <p className="card-sub" style={{ margin: 0 }}>
             {fmt(log.calories)} kcal came in from {log.calories_source === 'manual' ? 'a number typed in' : 'Lifesum'}. Log here and it’s kept as one item.
@@ -108,9 +120,22 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
             <path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2M7 8v8M10 8v8M13 8v8M16 8v8" />
           </svg>
         </button>
-        <button type="button" className="log-bar-btn" aria-label="Snap a photo of a meal" onClick={() => (tap(), setLogger({ meal: mealForTime(), mode: 'photo' }))}>
-          <IconCamera size={22} />
-        </button>
+        {food.ai !== false && (
+          <button type="button" className="log-bar-btn" aria-label="Snap a photo of a meal" onClick={() => (tap(), photoInput.current?.click())}>
+            <IconCamera size={22} />
+          </button>
+        )}
+        <input
+          ref={photoInput}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (f) setLogger({ meal: mealForTime(), mode: 'search', photo: f });
+          }}
+        />
       </div>
 
       {MEALS.map((m) => {
@@ -171,8 +196,21 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
         meal={logger?.meal ?? 'snacks'}
         mode={logger?.mode}
         edit={logger?.edit}
+        photo={logger?.photo}
         onClose={() => setLogger(null)}
         onDeleted={(removed) => setToast({ message: `Deleted ${removed[0]?.name ?? 'item'}`, undo: () => food.restore(removed) })}
+      />
+
+      <FoodGoalsSheet
+        open={goalsOpen}
+        profile={profile}
+        maintenance={Math.round((restingDay(body).kcal + (profile.active_goal_kcal || activeDefault)) / 10) * 10}
+        activeDefault={activeDefault}
+        onClose={() => setGoalsOpen(false)}
+        onSave={(patch) => {
+          updateProfile(patch);
+          setGoalsOpen(false);
+        }}
       />
 
       <Sheet open={!!saving} onClose={() => setSaving(null)} title="Save as a meal">
