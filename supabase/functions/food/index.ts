@@ -25,16 +25,18 @@ const MODELS = [
 ];
 const DAILY_LIMIT = 60;
 const MAX_IMAGE_CHARS = 2_000_000; // ~1.5 MB JPEG as base64
-const OFF_UA = '75Hard/1.0 (https://hard-75.netlify.app)';
+const OFF_UA = '75Hard/1.0 (https://github.com/charliefarber/75-Hard)';
 const OFF_FIELDS =
   'code,product_name,product_name_en,generic_name,brands,quantity,product_quantity,serving_size,serving_quantity,nutriments,image_front_small_url,image_small_url';
 
-const ORIGINS = ['https://hard-75.netlify.app', 'http://localhost:5173', 'http://localhost:4181', 'capacitor://localhost', 'http://localhost'];
+const ORIGINS = ['https://hard-75.pages.dev', 'https://hard-75.netlify.app', 'http://localhost:5173', 'http://localhost:4181', 'capacitor://localhost', 'http://localhost'];
+/** The Cloudflare Pages site, its preview builds, and the name Cloudflare gives it if hard-75 was taken. */
+const PAGES = /^https:\/\/([a-z0-9-]+\.)?hard-75(-[a-z0-9]+)?\.pages\.dev$/;
 
 function corsFor(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') ?? '';
   return {
-    'Access-Control-Allow-Origin': ORIGINS.includes(origin) ? origin : ORIGINS[0],
+    'Access-Control-Allow-Origin': ORIGINS.includes(origin) || PAGES.test(origin) ? origin : ORIGINS[0],
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     Vary: 'Origin',

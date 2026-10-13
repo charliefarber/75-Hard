@@ -1,0 +1,25 @@
+# Response headers, read by Cloudflare Pages (and Netlify) from the published folder.
+#
+# Security: only this site's own scripts and styles; network calls only to our Supabase project
+# and Open Food Facts (food search, barcodes and product photos). 'wasm-unsafe-eval' lets the
+# barcode reader's WebAssembly run (it can't run arbitrary JavaScript). The camera is allowed for
+# this site only, for barcode scanning.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob: https://vublvpjshnkybdilzcog.supabase.co https://images.openfoodfacts.org; font-src 'self' data:; connect-src 'self' https://vublvpjshnkybdilzcog.supabase.co wss://vublvpjshnkybdilzcog.supabase.co https://world.openfoodfacts.org https://search.openfoodfacts.org; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
+  Cross-Origin-Opener-Policy: same-origin
+
+# Hashed bundles never change; cache them for a year. The page itself always revalidates, so a
+# new version shows up the next time the app is opened.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
