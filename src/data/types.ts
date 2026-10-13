@@ -82,6 +82,8 @@ export interface Profile {
   birthday_pass_year?: number | null;
   timezone: string;
   health_sync_token: string;
+  /** When the iPhone Shortcut last sent Health data (0013). */
+  health_synced_at?: string | null;
 }
 
 export type ChallengeStatus = 'active' | 'completed' | 'reset';

@@ -9,7 +9,8 @@
 // Only signed-in users can call it (verify_jwt + a user check below). Estimates are capped at
 // DAILY_LIMIT a day per person. Photos are passed straight through and never stored.
 //
-// Secrets: CF_ACCOUNT_ID, CF_API_TOKEN (a Cloudflare API token with Workers AI permission).
+// Cloudflare credentials: Edge Function secrets CF_ACCOUNT_ID and CF_API_TOKEN (an API token with
+// Workers AI permission), or the same values in Supabase Vault as cf_account_id / cf_api_token.
 
 import { answerText, describePrompt, parseEstimate, photoPrompt, SYSTEM_PROMPT } from './estimate.ts';
 
@@ -88,11 +89,33 @@ async function runModel(model: string, acct: string, token: string, prompt: stri
   throw new Error(`${model}: ${last}`);
 }
 
-const configured = () => !!(Deno.env.get('CF_ACCOUNT_ID') && Deno.env.get('CF_API_TOKEN'));
+/**
+ * Cloudflare credentials: Edge Function secrets if set, otherwise the encrypted copies in Supabase
+ * Vault (read through food_ai_credentials(), which only the service role may call).
+ */
+let creds: { acct: string; token: string } | null | undefined;
+async function credentials(): Promise<{ acct: string; token: string } | null> {
+  const acct = Deno.env.get('CF_ACCOUNT_ID');
+  const token = Deno.env.get('CF_API_TOKEN');
+  if (acct && token) return { acct, token };
+  if (creds !== undefined) return creds;
+  if (!SERVICE_KEY) return (creds = null);
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/food_ai_credentials`, {
+      method: 'POST',
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    const v = res.ok ? await res.json() : null;
+    creds = v?.cf_account_id && v?.cf_api_token ? { acct: v.cf_account_id, token: v.cf_api_token } : null;
+  } catch {
+    return null; // try again next time
+  }
+  return creds;
+}
 
 async function estimate(prompt: string, image?: string) {
-  const acct = Deno.env.get('CF_ACCOUNT_ID')!;
-  const token = Deno.env.get('CF_API_TOKEN')!;
+  const { acct, token } = (await credentials())!;
   const problems: string[] = [];
   let empty: { items: unknown[]; note: string } | null = null;
   for (const model of MODELS) {
@@ -140,12 +163,12 @@ Deno.serve(async (req: Request) => {
 
   switch (body.action) {
     case 'status':
-      return reply(200, { ai: configured() });
+      return reply(200, { ai: !!(await credentials()) });
     case 'photo': {
       const image = typeof body.image === 'string' ? body.image : '';
       if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image) || image.length > MAX_IMAGE_CHARS)
         return reply(400, { error: 'bad_image' });
-      if (!configured()) return reply(503, { error: 'not_configured' });
+      if (!(await credentials())) return reply(503, { error: 'not_configured' });
       if (!(await withinLimit(user.id))) return reply(429, { error: 'daily_limit' });
       const r = await estimate(photoPrompt(meal, typeof body.hint === 'string' ? body.hint : ''), image);
       return reply(r.status, r.body);
@@ -153,7 +176,7 @@ Deno.serve(async (req: Request) => {
     case 'describe': {
       const text = typeof body.text === 'string' ? body.text.trim() : '';
       if (text.length < 2 || text.length > 500) return reply(400, { error: 'bad_text' });
-      if (!configured()) return reply(503, { error: 'not_configured' });
+      if (!(await credentials())) return reply(503, { error: 'not_configured' });
       if (!(await withinLimit(user.id))) return reply(429, { error: 'daily_limit' });
       const r = await estimate(describePrompt(meal, text));
       return reply(r.status, r.body);

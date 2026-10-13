@@ -101,7 +101,9 @@ export function ProfileScreen({ focus }: { focus?: 'about' }) {
                     ? `Synced ${formatDistanceToNow(health.lastSync, { addSuffix: true })}`
                     : 'Steps, calories, water, workouts'
                   : 'Steps, calories, water, workouts'
-                : 'Sync through an iPhone Shortcut'}
+                : profile.health_synced_at
+                  ? `Shortcut last sent data ${formatDistanceToNow(parseISO(profile.health_synced_at), { addSuffix: true })}`
+                  : 'Sync through an iPhone Shortcut'}
             </span>
           </div>
           {health.available ? (
