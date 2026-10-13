@@ -280,7 +280,7 @@ export class SupabaseRepo implements Repo {
 
   async updatePassword(password: string) {
     const { error } = await this.sb.auth.updateUser({ password });
-    if (error) throw new Error(/same/i.test(error.message) ? 'That’s the same as the old password. Pick a new one.' : error.message);
+    if (error) throw new Error(/same|different from the old/i.test(error.message) ? 'That’s the same as the old password. Pick a new one.' : error.message);
   }
 
   async signOut() {
