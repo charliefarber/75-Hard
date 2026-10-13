@@ -56,6 +56,7 @@ export function FoodLogger({
   mode = 'search',
   edit,
   onClose,
+  onDeleted,
 }: {
   open: boolean;
   date: string;
@@ -63,6 +64,8 @@ export function FoodLogger({
   mode?: LoggerMode;
   edit?: FoodEntry | null;
   onClose: () => void;
+  /** After an entry is deleted from the edit view (for an undo toast). */
+  onDeleted?: (removed: FoodEntry[]) => void;
 }) {
   const food = useFood();
   const { reportError } = useApp();
@@ -247,8 +250,9 @@ export function FoodLogger({
             onDelete={
               screen.editing
                 ? async () => {
-                    await food.remove([screen.editing!.id]);
+                    const removed = await food.remove([screen.editing!.id]);
                     onClose();
+                    onDeleted?.(removed);
                   }
                 : undefined
             }
@@ -274,8 +278,9 @@ export function FoodLogger({
             onDelete={
               screen.editing
                 ? async () => {
-                    await food.remove([screen.editing!.id]);
+                    const removed = await food.remove([screen.editing!.id]);
                     onClose();
+                    onDeleted?.(removed);
                   }
                 : undefined
             }

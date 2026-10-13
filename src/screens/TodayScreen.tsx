@@ -31,12 +31,15 @@ export function TodayScreen({
   setDate,
   openProgress,
   openPet,
+  openFood,
   openProfile,
 }: {
   date: string;
   setDate: (d: string) => void;
   openProgress: () => void;
   openPet: () => void;
+  /** Switch to the Food tab (the full diary). */
+  openFood: () => void;
   /** Open Profile at the "about you" section (for calorie estimates). */
   openProfile: () => void;
 }) {
