@@ -6,7 +6,8 @@ import { CHALLENGE_LENGTH, summarise, toISODate, weekSteps } from '../lib/challe
 import { fmt } from '../components/ui';
 import { RecapSheet } from '../components/Recap';
 import { mondayOf } from '../lib/recap';
-import { IconCalendarCheck, IconChevron } from '../components/Icons';
+import { IconCalendarCheck, IconChevron, IconChevronLeft } from '../components/Icons';
+import { CaloriesWeekCard } from '../components/CaloriesWeek';
 import { tap } from '../lib/haptics';
 import { WeightCard } from '../components/WeightChart';
 import { PhotosCard } from '../components/PhotosCard';
@@ -32,6 +33,7 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
   const [recap, setRecap] = useState<string | null>(null);
   const [viewer, setViewer] = useState<null | { index: number; compare: boolean }>(null);
   const [weighing, setWeighing] = useState(false);
+  const [monthPick, setMonthPick] = useState<number | null>(null);
   if (!profile || !challenge || !summary) return null;
 
   const attempt = history.findIndex((c) => c.id === challenge.id) + 1 || history.length;
@@ -51,6 +53,10 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
     const kept = weeks.filter((wk) => wk.some((c) => c && byDate.has(c)));
     if (kept.length) months.push({ key: toISODate(m), title: format(m, 'MMMM yyyy'), cells: kept.flat() });
   }
+  // One month at a time, starting on this month.
+  const thisMonth = months.findIndex((m) => m.key === toISODate(startOfMonth(parseISO(today))));
+  const monthIdx = Math.min(months.length - 1, Math.max(0, monthPick ?? (thisMonth >= 0 ? thisMonth : today < months[0]?.key ? 0 : months.length - 1)));
+  const month = months[monthIdx];
 
   const sw = weekSteps(logs, today);
   const weekGoal = profile.step_goal * 7;
@@ -91,9 +97,8 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
       </div>
 
       <button
-        className="card"
+        className="card recap-btn"
         onClick={() => (tap(), setRecap(mondayOf(today) === mondayOf(challenge.start_date) ? mondayOf(today) : toISODate(addDays(parseISO(mondayOf(today)), -7))))}
-        style={{ border: 0, flexDirection: 'row', alignItems: 'center', gap: 14, textAlign: 'left' }}
       >
         <span className="icon-badge" style={{ background: 'var(--mint-tint)', color: 'var(--green-ink)' }}>
           <IconCalendarCheck size={22} />
@@ -113,9 +118,17 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
         <div className="card-sub" style={{ marginTop: -6 }}>
           Tap any day to fill it in or change it.
         </div>
-        {months.map((m) => (
+        {month && [month].map((m) => (
           <div key={m.key} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <span style={{ fontSize: 14, fontWeight: 800 }}>{m.title}</span>
+            <div className="month-pager">
+              <button type="button" className="icon-btn" aria-label="Previous month" disabled={monthIdx === 0} onClick={() => (tap(), setMonthPick(monthIdx - 1))}>
+                <IconChevronLeft size={20} />
+              </button>
+              <span aria-live="polite">{m.title}</span>
+              <button type="button" className="icon-btn" aria-label="Next month" disabled={monthIdx >= months.length - 1} onClick={() => (tap(), setMonthPick(monthIdx + 1))}>
+                <IconChevron size={20} />
+              </button>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4, textAlign: 'center' }}>
               {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
                 <span key={i} aria-hidden="true" style={{ fontSize: 11, fontWeight: 700, color: 'var(--faint)', paddingBottom: 2 }}>
@@ -173,6 +186,7 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
         </div>
       </section>
 
+      <span className="section-label">Body</span>
       <WeightCard logs={logs} unit={unit} today={today} onLog={() => setWeighing(true)} />
 
       <PhotosCard
@@ -180,6 +194,9 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
         onOpen={(index) => setViewer({ index, compare: false })}
         onCompare={() => setViewer({ index: photos.length - 1, compare: true })}
       />
+
+      <span className="section-label">Food & activity</span>
+      <CaloriesWeekCard logs={logs} profile={profile} today={today} />
 
       <section className="card">
         <div className="card-head" style={{ alignItems: 'baseline' }}>

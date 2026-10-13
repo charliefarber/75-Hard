@@ -126,9 +126,9 @@ export function ProfileScreen({ focus }: { focus?: 'about' }) {
           </span>
           <div className="row-text">
             <span className="row-title">Lifesum</span>
-            <span className="row-sub">Optional now. Its calories still come in through Apple Health until you log food here.</span>
+            <span className="row-sub">Still syncs through Apple Health</span>
           </div>
-          <span className="chip">Via Health</span>
+          <span className="chip">Optional</span>
         </div>
       </section>
       {!health.available && repo.kind === 'local' && (

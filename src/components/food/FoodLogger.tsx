@@ -79,6 +79,8 @@ export function FoodLogger({
   const [batches, setBatches] = useState<FoodEntry[][]>([]);
   const added = batches.flat();
   const [flash, setFlash] = useState<string | null>(null);
+  /** A problem to explain (estimate not available, nothing found…), shown above the content. */
+  const [notice, setNotice] = useState<string | null>(null);
   const photoInput = useRef<HTMLInputElement>(null);
   const top = useRef<HTMLDivElement>(null);
 
@@ -89,8 +91,9 @@ export function FoodLogger({
     setQuery('');
     setBatches([]);
     setFlash(null);
+    setNotice(null);
     if (edit) {
-      if (edit.food) setScreen({ name: 'detail', food: edit.food, amount: edit.amount, unit: edit.unit, editing: edit });
+      if (edit.food && edit.source !== 'quick') setScreen({ name: 'detail', food: edit.food, amount: edit.amount, unit: edit.unit, editing: edit });
       else setScreen({ name: 'quick', editing: edit });
     } else if (mode === 'quick') setScreen({ name: 'quick' });
     else if (mode === 'describe') setScreen({ name: 'describe' });
@@ -102,6 +105,7 @@ export function FoodLogger({
 
   const go = (s: Screen) => {
     setScreen(s);
+    setNotice(null);
     requestAnimationFrame(() => top.current?.closest('.sheet')?.scrollTo({ top: 0 }));
   };
 
@@ -155,10 +159,15 @@ export function FoodLogger({
       go({ name: 'working', label: 'Looking at your photo…', photo: preview });
       const image = await photoDataUrl(file);
       const res = await food.estimate({ action: 'photo', meal, image });
+      if (!res.items.length) {
+        go({ name: 'home' });
+        setNotice('Couldn’t spot any food in that photo. Try closer, or describe it instead.');
+        return;
+      }
       go({ name: 'review', source: 'photo', note: res.note, photo: preview, items: res.items.map((i) => ({ ...i, on: true, scale: 1 })) });
     } catch (e) {
       go({ name: 'home' });
-      if (e instanceof EstimateError) setFlash(e.message);
+      if (e instanceof EstimateError) setNotice(e.message);
       else reportError(e);
     }
   }
@@ -167,10 +176,15 @@ export function FoodLogger({
     go({ name: 'working', label: 'Working it out…' });
     try {
       const res = await food.estimate({ action: 'describe', meal, text });
+      if (!res.items.length) {
+        go({ name: 'describe', text });
+        setNotice('Couldn’t work that one out. Add a little more detail, like how much.');
+        return;
+      }
       go({ name: 'review', source: 'describe', note: res.note, items: res.items.map((i) => ({ ...i, on: true, scale: 1 })) });
     } catch (e) {
       go({ name: 'describe', text });
-      if (e instanceof EstimateError) setFlash(e.message);
+      if (e instanceof EstimateError) setNotice(e.message);
       else reportError(e);
     }
   }
@@ -198,6 +212,12 @@ export function FoodLogger({
               </button>
             ))}
           </div>
+        )}
+
+        {notice && (
+          <p className="note-card" role="alert">
+            {notice}
+          </p>
         )}
 
         {screen.name === 'home' && (
@@ -271,7 +291,8 @@ export function FoodLogger({
             setMeal={setMeal}
             onSave={async (q) => {
               if (screen.editing) {
-                await food.update({ ...screen.editing, name: q.name?.trim() || screen.editing.name, kcal: Math.round(q.kcal), protein_g: q.protein ?? null, carbs_g: q.carbs ?? null, fat_g: q.fat ?? null, meal });
+                const fresh = quickEntry(q, meal, screen.editing.log_date);
+                await food.update({ ...fresh, id: screen.editing.id, created_at: screen.editing.created_at, amount: 1, unit: '1 portion' });
                 success();
                 onClose();
               } else {

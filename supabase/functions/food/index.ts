@@ -94,15 +94,18 @@ async function estimate(prompt: string, image?: string) {
   const acct = Deno.env.get('CF_ACCOUNT_ID')!;
   const token = Deno.env.get('CF_API_TOKEN')!;
   const problems: string[] = [];
+  let empty: { items: unknown[]; note: string } | null = null;
   for (const model of MODELS) {
     try {
       const parsed = parseEstimate(await runModel(model, acct, token, prompt, image));
-      if (parsed) return { status: 200, body: { ...parsed, model } };
-      problems.push(`${model}: unreadable answer`);
+      if (parsed?.items.length) return { status: 200, body: { ...parsed, model } };
+      if (parsed) empty = parsed; // it answered but saw no food; a second opinion is cheap
+      problems.push(`${model}: ${parsed ? 'no items' : 'unreadable answer'}`);
     } catch (e) {
       problems.push(String(e instanceof Error ? e.message : e));
     }
   }
+  if (empty) return { status: 200, body: { items: [], note: empty.note } };
   console.error('estimate failed', problems.join(' | '));
   return { status: 502, body: { error: 'estimate_failed' } };
 }
