@@ -17,6 +17,11 @@ export interface Repo {
   signUp(email: string, password: string, displayName: string): Promise<{ needsConfirmation: boolean }>;
   signIn(email: string, password: string): Promise<void>;
   sendPasswordReset(email: string): Promise<void>;
+  /** Opened from a password-reset email: she's signed in and should pick a new password. */
+  readonly arrivedFromReset: boolean;
+  /** Why an email link didn't work (e.g. it expired), if it didn't. */
+  readonly authLinkError: string | null;
+  updatePassword(password: string): Promise<void>;
   signOut(): Promise<void>;
 
   getProfile(): Promise<Profile>;
@@ -212,8 +217,20 @@ export class SupabaseRepo implements Repo {
   readonly kind = 'supabase' as const;
   private sb: SupabaseClient;
   private userId: string | null = null;
+  readonly arrivedFromReset: boolean;
+  readonly authLinkError: string | null;
 
   constructor(url: string, key: string) {
+    // Read the email link before the client signs in from it and tidies the address bar.
+    const link = typeof window === 'undefined' ? '' : `${window.location.hash.slice(1)}&${window.location.search.slice(1)}`;
+    const params = new URLSearchParams(link);
+    this.arrivedFromReset = params.get('type') === 'recovery';
+    const err = params.get('error_description');
+    this.authLinkError = err
+      ? /expired|invalid/i.test(err)
+        ? 'That email link has expired or was already used. Ask for a new one.'
+        : err.replace(/\+/g, ' ')
+      : null;
     this.sb = createClient(url, key, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     });
@@ -259,6 +276,11 @@ export class SupabaseRepo implements Repo {
       redirectTo: window.location.origin + window.location.pathname,
     });
     if (error) throw new Error(error.message);
+  }
+
+  async updatePassword(password: string) {
+    const { error } = await this.sb.auth.updateUser({ password });
+    if (error) throw new Error(/same/i.test(error.message) ? 'That’s the same as the old password. Pick a new one.' : error.message);
   }
 
   async signOut() {
@@ -612,6 +634,10 @@ export class LocalRepo implements Repo {
   }
 
   async sendPasswordReset() {}
+
+  readonly arrivedFromReset = false;
+  readonly authLinkError = null;
+  async updatePassword() {}
 
   async signOut() {
     this.mutate((s) => (s.user = null));

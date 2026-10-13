@@ -12,6 +12,7 @@ import { supabaseAnonKey, supabaseUrl } from '../data/repo';
 import { litres, summarise } from '../lib/challenge';
 import { Sheet, fmt } from '../components/ui';
 import { IconChevron, IconCopy, IconHeart } from '../components/Icons';
+import { PasswordSheet } from '../components/PasswordSheet';
 import { DEFAULT_SHORTCUT, runShortcut, setShortcutName, shortcutName } from '../lib/shortcut';
 
 type GoalKey = 'water_goal_ml' | 'step_goal' | 'workout_goal_minutes' | 'reading_goal_pages';
@@ -43,6 +44,7 @@ export function ProfileScreen({ focus }: { focus?: 'about' }) {
   const [dateEdit, setDateEdit] = useState<null | 'start' | 'birthday'>(null);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   if (!profile || !challenge) return null;
@@ -275,7 +277,17 @@ export function ProfileScreen({ focus }: { focus?: 'about' }) {
         Only you can see what you log here. Nobody else, including other people using the app, can read it.
       </p>
 
-      {user?.email && <p className="card-sub" style={{ margin: '4px 4px 0' }}>Signed in as {user.email}</p>}
+      {user?.email && (
+        <p className="card-sub" style={{ margin: '4px 4px 0', display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <span>Signed in as {user.email}</span>
+          {repo.kind === 'supabase' && (
+            <button className="link-btn" style={{ fontSize: 13 }} onClick={() => setPasswordOpen(true)}>
+              Change password
+            </button>
+          )}
+        </p>
+      )}
+      <PasswordSheet open={passwordOpen} onClose={() => setPasswordOpen(false)} />
       <div style={{ display: 'flex', gap: 10 }}>
         <button className="btn btn-soft" style={{ flex: 1, height: 48 }} onClick={() => signOut()}>
           Sign out

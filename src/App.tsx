@@ -9,6 +9,7 @@ import { ProfileScreen } from './screens/ProfileScreen';
 import { PetScreen } from './screens/PetScreen';
 import { FoodScreen } from './screens/FoodScreen';
 import { Toast } from './components/ui';
+import { PasswordSheet } from './components/PasswordSheet';
 import { IconFork, IconGrid, IconHome, IconLeaf, IconUser } from './components/Icons';
 import { tap } from './lib/haptics';
 import { setStatusBar } from './lib/statusbar';
@@ -41,7 +42,12 @@ function Splash() {
 }
 
 function Main() {
-  const { status, today, error, clearError } = useApp();
+  const { status, today, error, clearError, passwordReset, dismissPasswordReset } = useApp();
+  // Opened from a password-reset email: ask for the new password straight away.
+  const [resetSheet, setResetSheet] = useState(passwordReset);
+  useEffect(() => {
+    if (passwordReset) setResetSheet(true);
+  }, [passwordReset]);
   const [tab, setTab] = useState<Tab>('today');
   const [profileFocus, setProfileFocus] = useState<'about' | undefined>();
   const [date, setDate] = useState(today);
@@ -54,7 +60,21 @@ function Main() {
     setStatusBar(green ? 'green' : 'light');
   }, [status, tab]);
 
-  const toast = error ? <Toast message={error} onClose={clearError} /> : null;
+  const toast = (
+    <>
+      {error && <Toast message={error} onClose={clearError} />}
+      {status !== 'signedOut' && status !== 'loading' && (
+        <PasswordSheet
+          open={resetSheet}
+          fromEmail
+          onClose={() => {
+            setResetSheet(false);
+            dismissPasswordReset();
+          }}
+        />
+      )}
+    </>
+  );
 
   if (status === 'loading') return <Splash />;
   if (status === 'signedOut')

@@ -57,6 +57,10 @@ interface AppData {
   syncHealth(): Promise<void>;
   refresh(): Promise<void>;
   signOut(): Promise<void>;
+  /** She arrived from a password-reset email and hasn't picked a new password yet. */
+  passwordReset: boolean;
+  setNewPassword(password: string): Promise<void>;
+  dismissPasswordReset(): void;
 }
 
 const Ctx = createContext<AppData | null>(null);
@@ -97,7 +101,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [history, setHistory] = useState<Challenge[]>([]);
   const [logs, setLogs] = useState<Record<string, DailyLog>>({});
   const [today, setToday] = useState(todayISO());
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => repo.authLinkError);
+  const [passwordReset, setPasswordReset] = useState(() => repo.arrivedFromReset);
   const [health, setHealth] = useState<HealthState>({ available: false, connected: readFlag(), syncing: false, lastSync: null });
 
   const logsRef = useRef(logs);
@@ -446,6 +451,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     [repo, challenge, fail],
   );
 
+  const setNewPassword = useCallback(
+    async (password: string) => {
+      await repo.updatePassword(password);
+      setPasswordReset(false);
+    },
+    [repo],
+  );
+
   const signOut = useCallback(async () => {
     flushAll();
     await repo.signOut();
@@ -523,6 +536,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     syncHealth,
     refresh,
     signOut,
+    passwordReset,
+    setNewPassword,
+    dismissPasswordReset: () => setPasswordReset(false),
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
