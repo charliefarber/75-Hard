@@ -113,7 +113,7 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
       <div className="log-bar">
         <button type="button" className="log-bar-search" onClick={() => (tap(), setLogger({ meal: mealForTime(), mode: 'search' }))}>
           <IconSearch size={20} />
-          <span>Search or add food</span>
+          <span>Search foods</span>
         </button>
         <button type="button" className="log-bar-btn" aria-label="Scan a barcode" onClick={() => (tap(), setLogger({ meal: mealForTime(), mode: 'scan' }))}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">

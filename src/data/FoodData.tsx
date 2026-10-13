@@ -193,7 +193,7 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
         const log = logsRef.current[d];
         if (!existing.length && log?.calories && log.calories > 0 && log.calories_source && log.calories_source !== 'food') {
           const q = quickEntry({ name: log.calories_source === 'manual' ? 'Calories typed in earlier' : 'Logged in Lifesum', kcal: log.calories }, 'snacks', d);
-          extra.push({ ...q, food: null });
+          extra.push({ ...q, food: null, food_key: null });
         }
       }
       const all = [...extra, ...entries];

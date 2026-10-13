@@ -12,6 +12,12 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# The barcode reader's WebAssembly must be served as application/wasm to compile while it downloads.
+[[headers]]
+  for = "/assets/*.wasm"
+  [headers.values]
+    Content-Type = "application/wasm"
+
 [[headers]]
   for = "/index.html"
   [headers.values]

@@ -41,10 +41,12 @@
 
 .log-bar { display: flex; gap: 8px; }
 .log-bar-search {
-  flex: 1; height: 50px; border-radius: 16px; border: 0; background: var(--surface); color: var(--muted);
+  flex: 1; min-width: 0; height: 50px; border-radius: 16px; border: 0; background: var(--surface); color: var(--muted);
   display: flex; align-items: center; gap: 10px; padding: 0 16px; font-size: 15px; font-weight: 600; text-align: left;
   box-shadow: 0 1px 0 rgba(20, 35, 26, 0.03);
 }
+.log-bar-search span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-bar-search svg { flex: none; }
 .log-bar-btn { width: 50px; height: 50px; border-radius: 16px; border: 0; background: var(--forest); color: #fff; display: flex; align-items: center; justify-content: center; flex: none; }
 .log-bar-btn:active, .log-bar-search:active { transform: scale(0.97); }
 
@@ -217,3 +219,8 @@
 .ring-small.warn { color: #b4570f; }
 .targets-link { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 0; margin-top: -4px; color: var(--muted); }
 .targets-set { align-self: flex-start; background: var(--mint-tint); color: var(--green-ink); }
+
+@media (max-width: 360px) {
+  .log-action { font-size: 11px; padding: 9px 2px 8px; }
+  .log-action-icon { width: 36px; height: 36px; }
+}

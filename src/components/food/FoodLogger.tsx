@@ -330,6 +330,7 @@ export function FoodLogger({
             note={screen.note}
             photo={screen.photo}
             meal={meal}
+            setMeal={setMeal}
             onChange={(items) => setScreen({ ...screen, items })}
             onSearch={(q) => {
               setQuery(q);
@@ -352,9 +353,13 @@ export function FoodLogger({
             barcode={screen.barcode}
             initialName={screen.foodName}
             notFound={screen.notFound}
+            meal={meal}
             onSave={async (f) => {
               await food.saveCustomFood(f);
-              openFood(f);
+              if (!f.servings.length) return openFood(f); // per 100 g: she picks how much
+              const e = entryFor(f, 1, f.servings[0].label, meal, date);
+              await logNow([e], `${f.name} · ${e.kcal} kcal`);
+              go({ name: 'home' });
             }}
           />
         )}
@@ -499,7 +504,7 @@ function Home({
             type="search"
             enterKeyHint="search"
             autoComplete="off"
-            placeholder="Search foods and brands"
+            placeholder="Food or brand"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -828,15 +833,7 @@ function Detail({
         )}
       </div>
 
-      {editing && (
-        <div className="segmented meal-pick" role="group" aria-label="Meal">
-          {MEALS.map((m) => (
-            <button key={m.id} type="button" aria-pressed={meal === m.id} onClick={() => (tap(), setMeal(m.id))}>
-              {m.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <MealPick meal={meal} setMeal={setMeal} />
 
       <button type="button" className="btn btn-primary btn-block" disabled={!valid || busy} onClick={save}>
         {editing ? 'Save' : `Add to ${mealLabel(meal)}`}
@@ -851,6 +848,19 @@ function Detail({
 }
 
 const niceInput = (n: number) => String(Math.round(n * 100) / 100);
+
+/** Which meal it goes in, right above the button that adds it. */
+function MealPick({ meal, setMeal }: { meal: Meal; setMeal: (m: Meal) => void }) {
+  return (
+    <div className="segmented meal-pick" role="group" aria-label="Meal">
+      {MEALS.map((m) => (
+        <button key={m.id} type="button" aria-pressed={meal === m.id} onClick={() => (tap(), setMeal(m.id))}>
+          {m.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function Macro({ label, v, cls }: { label: string; v: number | null | undefined; cls: string }) {
   return (
@@ -934,15 +944,7 @@ function QuickAdd({
         ))}
       </div>
       {!kcal && macroKcal > 0 && <p className="card-sub" style={{ margin: 0 }}>That’s about {Math.round(macroKcal)} kcal from the macros.</p>}
-      {editing && (
-        <div className="segmented meal-pick" role="group" aria-label="Meal">
-          {MEALS.map((m) => (
-            <button key={m.id} type="button" aria-pressed={meal === m.id} onClick={() => (tap(), setMeal(m.id))}>
-              {m.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <MealPick meal={meal} setMeal={setMeal} />
       <button type="submit" className="btn btn-primary btn-block" disabled={!valid || busy}>
         {editing ? 'Save' : `Add to ${mealLabel(meal)}`}
       </button>
@@ -998,6 +1000,7 @@ function ReviewList({
   note,
   photo,
   meal,
+  setMeal,
   onChange,
   onSearch,
   onAdd,
@@ -1007,6 +1010,7 @@ function ReviewList({
   note: string;
   photo?: string;
   meal: Meal;
+  setMeal: (m: Meal) => void;
   onChange: (items: Review) => void;
   onSearch: (q: string) => void;
   onAdd: (items: Review) => Promise<void>;
@@ -1070,6 +1074,7 @@ function ReviewList({
         {source === 'photo' ? 'Estimated from your photo' : 'Estimated from your description'}: portions can be off, so nudge them with − / + if you know better.
         {note ? ` ${note}` : ''}
       </p>
+      <MealPick meal={meal} setMeal={setMeal} />
       <button
         type="button"
         className="btn btn-primary btn-block"
@@ -1095,11 +1100,13 @@ function CustomFood({
   barcode,
   initialName,
   notFound,
+  meal,
   onSave,
 }: {
   barcode?: string;
   initialName?: string;
   notFound?: boolean;
+  meal: Meal;
   onSave: (f: Food) => Promise<void>;
 }) {
   const [name, setName] = useState(initialName ?? '');
@@ -1188,7 +1195,7 @@ function CustomFood({
       </div>
       {barcode && <p className="card-sub" style={{ margin: 0 }}>Barcode {barcode}</p>}
       <button type="submit" className="btn btn-primary btn-block" disabled={!valid || busy}>
-        Save and log it
+        {per === 'serving' ? `Save and add 1 serving to ${mealLabel(meal)}` : 'Save, then choose how much'}
       </button>
     </form>
   );

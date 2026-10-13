@@ -239,12 +239,14 @@ export function quickEntry(
   date: string,
 ): FoodEntry {
   const name = q.name?.trim() || 'Quick add';
+  // Named quick adds are remembered (Recent), so they can be logged again in one tap.
+  const food = q.name?.trim() ? portionFood(`quick:${slug(name)}`, name, { kcal: Math.round(q.kcal), protein: q.protein ?? null, carbs: q.carbs ?? null, fat: q.fat ?? null }) : null;
   return {
     id: newId(),
     log_date: date,
     meal,
     name,
-    food_key: null,
+    food_key: food?.key ?? null,
     amount: 1,
     unit: '1 portion',
     grams: null,
@@ -253,6 +255,6 @@ export function quickEntry(
     carbs_g: q.carbs ?? null,
     fat_g: q.fat ?? null,
     source: 'quick',
-    food: q.name?.trim() ? portionFood(`quick:${slug(name)}`, name, { kcal: Math.round(q.kcal), protein: q.protein ?? null, carbs: q.carbs ?? null, fat: q.fat ?? null }) : null,
+    food,
   };
 }
