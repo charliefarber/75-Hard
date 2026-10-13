@@ -3,11 +3,8 @@ import { addDays, format, parseISO } from 'date-fns';
 import { useApp } from '../data/AppData';
 import { litres, summarise, toISODate } from '../lib/challenge';
 import { mondayOf, weekRecap } from '../lib/recap';
-import { stageFor } from '../lib/pet';
-import { PetSprite } from './PetSprite';
-import { Sheet, fmt } from './ui';
+import { Ring, Sheet, fmt } from './ui';
 import { IconCheck, IconChevron, IconChevronLeft } from './Icons';
-import { TreatIcon } from '../screens/PetScreen';
 
 const RECAP_KEY = (monday: string) => `seventyfive:recap-${monday}`;
 
@@ -45,8 +42,8 @@ export function RecapSheet({ open, monday: initial, onClose }: { open: boolean; 
   const firstMonday = mondayOf(challenge.start_date);
   const thisMonday = mondayOf(today);
   const isCurrent = monday === thisMonday;
-  const petName = challenge.pet_name || 'Mochi';
   const finish = format(parseISO(summary.finishDate), 'EEE d MMM');
+  const share = Math.round(r.taskShare * 100);
   const step = (n: number) => setMonday(toISODate(addDays(parseISO(monday), n * 7)));
   const range = `${format(parseISO(r.monday), 'd MMM')} – ${format(parseISO(r.sunday), 'd MMM')}`;
 
@@ -74,25 +71,27 @@ export function RecapSheet({ open, monday: initial, onClose }: { open: boolean; 
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 18, flex: 'none' }}>
-            <PetSprite style={challenge.pet_style ?? 'girl'} stage={stageFor(r.totalCompleted)} mood={r.perfect ? 'ecstatic' : 'happy'} size={84} />
-          </div>
+          <Ring size={76} stroke={8} value={r.taskShare} max={1} color="var(--mint)" track="rgba(255,255,255,0.14)" label={`${share}% of tasks done`}>
+            <span style={{ fontSize: 19, fontWeight: 800 }}>{share}%</span>
+          </Ring>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em' }}>{r.headline}</span>
-            <span style={{ color: 'var(--mint-soft)', fontWeight: 600, fontSize: 14 }}>
-              {r.inPlay ? `${r.completed} of ${r.inPlay} days complete` : 'Your challenge hadn’t started yet'}
+            <span style={{ color: 'var(--mint-soft)', fontWeight: 600, fontSize: 14, lineHeight: 1.35 }}>
+              {r.inPlay
+                ? `${share}% of tasks done · ${r.completed} full ${r.completed === 1 ? 'day' : 'days'} of ${r.inPlay}`
+                : 'Your challenge hadn’t started yet'}
             </span>
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 6 }} aria-label="Days this week">
           {r.days.map((d) => {
             const done = d.state === 'complete';
-            const missed = d.state === 'missed';
+            const partial = d.state === 'partial';
             return (
               <div key={d.date} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--mint-soft)' }}>{format(parseISO(d.date), 'EEEEE')}</span>
                 <span
-                  aria-label={`${format(parseISO(d.date), 'EEEE')}: ${d.state ?? 'not in the challenge'}`}
+                  aria-label={`${format(parseISO(d.date), 'EEEE')}: ${d.state === null ? 'not in the challenge' : done ? 'full day' : `${d.done} of ${d.of} done`}`}
                   style={{
                     width: 30,
                     height: 30,
@@ -100,35 +99,20 @@ export function RecapSheet({ open, monday: initial, onClose }: { open: boolean; 
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    background: done ? 'var(--mint)' : missed ? '#F5C25B' : 'transparent',
-                    color: done ? 'var(--forest)' : '#5B3A00',
+                    background: done ? 'var(--mint)' : partial ? 'rgba(255,255,255,0.16)' : 'transparent',
+                    color: done ? 'var(--forest)' : '#fff',
                     border: d.state === 'today' ? '2px solid var(--mint)' : d.state === null ? '2px dashed rgba(255,255,255,0.25)' : '0',
-                    fontSize: 12,
+                    fontSize: 10,
                     fontWeight: 800,
                   }}
                 >
-                  {done ? <IconCheck size={16} strokeWidth={3} /> : missed ? '+1' : ''}
+                  {done ? <IconCheck size={16} strokeWidth={3} /> : partial ? `${d.done}/${d.of}` : ''}
                 </span>
               </div>
             );
           })}
         </div>
       </section>
-
-      {r.perfect && (
-        <div className="card" style={{ flexDirection: 'row', alignItems: 'center', gap: 12, background: '#FFF7E8', border: '1.5px solid #F5DFA8', padding: 12 }}>
-          <TreatIcon size={34} />
-          <span style={{ fontWeight: 700, lineHeight: 1.35 }}>Perfect week! {petName} earned a treat.</span>
-        </div>
-      )}
-      {r.evolvedTo && (
-        <div className="card" style={{ flexDirection: 'row', alignItems: 'center', gap: 12, background: 'var(--mint-tint)', padding: 12 }}>
-          <PetSprite style={challenge.pet_style ?? 'girl'} stage={stageFor(r.totalCompleted)} mood="ecstatic" size={48} still />
-          <span style={{ fontWeight: 700, lineHeight: 1.35 }}>
-            {petName} evolved into {r.evolvedTo} this week!
-          </span>
-        </div>
-      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
         <Stat label="Steps" value={fmt(r.steps.total)} sub={`of ${fmt(r.steps.goal)}`} pct={r.steps.total / r.steps.goal} color="var(--steps)" />
@@ -153,6 +137,24 @@ export function RecapSheet({ open, monday: initial, onClose }: { open: boolean; 
           pct={r.inPlay ? r.readingDays / r.inPlay : 0}
           color="var(--read)"
         />
+        <Stat
+          label="No alcohol"
+          value={`${r.soberDays}/${r.inPlay || 0}`}
+          sub="days alcohol-free"
+          pct={r.inPlay ? r.soberDays / r.inPlay : 0}
+          color="var(--green)"
+        />
+        <Stat
+          label="Eaten"
+          value={r.eaten.days ? `${fmt(r.eaten.avg)}` : '–'}
+          sub={
+            r.eaten.days
+              ? `kcal a day${profile.calorie_goal ? ` · goal ${fmt(profile.calorie_goal)}` : ''}`
+              : 'no food logged'
+          }
+          pct={r.eaten.days && profile.calorie_goal ? r.eaten.avg / profile.calorie_goal : 0}
+          color="var(--gold)"
+        />
       </div>
       {r.steps.bestDay && r.steps.bestSteps > 0 && (
         <p className="card-sub" style={{ margin: '-4px 2px 0' }}>
@@ -161,7 +163,7 @@ export function RecapSheet({ open, monday: initial, onClose }: { open: boolean; 
       )}
 
       <p style={{ margin: 0, color: 'var(--ink-2)', fontWeight: 600, textAlign: 'center' }}>
-        {r.totalCompleted} of 75 done · finish line {finish}
+        {r.totalCompleted} full {r.totalCompleted === 1 ? 'day' : 'days'} so far · day 75 is {finish}
       </p>
       <button className="btn btn-primary btn-block" onClick={onClose}>
         {isCurrent ? 'Back to it' : 'Let’s go'}

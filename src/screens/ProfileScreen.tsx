@@ -11,7 +11,8 @@ import { FoodGoalsSheet } from '../components/food/GoalsSheet';
 import { supabaseAnonKey, supabaseUrl } from '../data/repo';
 import { litres, summarise } from '../lib/challenge';
 import { Sheet, fmt } from '../components/ui';
-import { IconChevron, IconCopy, IconHeart, IconLeaf } from '../components/Icons';
+import { IconChevron, IconCopy, IconHeart } from '../components/Icons';
+import { DEFAULT_SHORTCUT, runShortcut, setShortcutName, shortcutName } from '../lib/shortcut';
 
 type GoalKey = 'water_goal_ml' | 'step_goal' | 'workout_goal_minutes' | 'reading_goal_pages';
 
@@ -121,16 +122,6 @@ export function ProfileScreen({ focus }: { focus?: 'about' }) {
               Set up
             </button>
           )}
-        </div>
-        <div className="row">
-          <span className="icon-badge" style={{ background: 'var(--green)', color: '#fff' }}>
-            <IconLeaf size={20} strokeWidth={2.2} />
-          </span>
-          <div className="row-text">
-            <span className="row-title">Lifesum</span>
-            <span className="row-sub">Still syncs through Apple Health</span>
-          </div>
-          <span className="chip">Optional</span>
         </div>
       </section>
       {!health.available && repo.kind === 'local' && (
@@ -656,7 +647,7 @@ function Step({ n, children }: { n: number; children: ReactNode }) {
 }
 
 function ShortcutSheet({ open, onClose, token }: { open: boolean; onClose: () => void; token: string }) {
-  const { regenerateSyncToken } = useApp();
+  const { regenerateSyncToken, refresh } = useApp();
   const endpoint = `${supabaseUrl ?? ''}/rest/v1/rpc/sync_steps`;
   return (
     <Sheet open={open} onClose={onClose} title="Sync Apple Health with a Shortcut">
@@ -681,6 +672,20 @@ function ShortcutSheet({ open, onClose, token }: { open: boolean; onClose: () =>
           <strong>Time of Day</strong> ones (say 08:00, 12:00, 18:00, 22:00) with <strong>Run Immediately</strong>.
         </Step>
       </ol>
+      <label className="field">
+        Shortcut name on this phone (for the Sync steps button)
+        <input
+          className="input"
+          defaultValue={shortcutName()}
+          placeholder={DEFAULT_SHORTCUT}
+          autoCapitalize="off"
+          autoCorrect="off"
+          onChange={(e) => setShortcutName(e.target.value)}
+        />
+      </label>
+      <button className="btn btn-ghost btn-block" onClick={() => runShortcut(refresh)}>
+        Run it now
+      </button>
       <CopyField label="URL" value={endpoint} />
       <CopyField label="apikey header" value={supabaseAnonKey ?? ''} />
       <CopyField label="p_token (keep private)" value={token} />

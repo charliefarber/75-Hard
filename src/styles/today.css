@@ -36,7 +36,8 @@
 .week-num { font-size: 15px; font-weight: 700; }
 .week-dot { width: 6px; height: 6px; border-radius: 3px; background: transparent; }
 .week-day.complete .week-dot { background: var(--mint); }
-.week-day.missed .week-dot { background: var(--gold); }
+.week-day.partial .week-dot { background: rgba(255, 255, 255, 0.4); }
+.week-day[aria-pressed='true'].partial .week-dot { background: #c9d3cb; }
 .week-day[aria-pressed='true'].complete .week-dot { background: var(--green); }
 
 /* ---------- Content ---------- */

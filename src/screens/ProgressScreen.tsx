@@ -19,7 +19,7 @@ import '../styles/log.css';
 
 const CELL: Record<string, { bg: string; fg: string; border: string }> = {
   complete: { bg: 'var(--green)', fg: '#fff', border: 'transparent' },
-  missed: { bg: '#fdf0d8', fg: '#8a4b00', border: '#f5dfa8' },
+  partial: { bg: 'var(--mint-tint)', fg: 'var(--green-ink)', border: 'transparent' },
   today: { bg: '#fff', fg: 'var(--forest)', border: 'var(--green)' },
   future: { bg: 'var(--line)', fg: 'var(--faint)', border: 'transparent' },
 };
@@ -37,7 +37,6 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
   if (!profile || !challenge || !summary) return null;
 
   const attempt = history.findIndex((c) => c.id === challenge.id) + 1 || history.length;
-  const pct = Math.round((summary.completedDays / CHALLENGE_LENGTH) * 100);
 
   const byDate = new Map(summary.timeline.map((t) => [t.date, t]));
   const first = parseISO(summary.timeline[0]?.date ?? challenge.start_date);
@@ -87,13 +86,9 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
-        <Tile value={String(summary.completedDays)} label="days complete" dark />
-        <Tile value={String(summary.remaining)} label="days to go" />
-        {summary.missedDays.length > 0 ? (
-          <Tile value={`+${summary.missedDays.length}`} label={summary.missedDays.length === 1 ? 'day added' : 'days added'} />
-        ) : (
-          <Tile value={`${pct}%`} label="of the way" />
-        )}
+        <Tile value={String(summary.completedDays)} label={summary.completedDays === 1 ? 'full day' : 'full days'} dark />
+        <Tile value={summary.currentDay ? `Day ${summary.currentDay}` : '–'} label={`of ${CHALLENGE_LENGTH}`} />
+        <Tile value={String(summary.remaining)} label={summary.remaining === 1 ? 'day to go' : 'days to go'} />
       </div>
 
       <button
@@ -113,7 +108,7 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
       <section className="card">
         <div className="card-head">
           <h2 className="card-title">Calendar</h2>
-          <span className="card-sub">Finish {format(parseISO(summary.finishDate), 'EEE d MMM')}</span>
+          <span className="card-sub">Day 75 is {format(parseISO(summary.finishDate), 'EEE d MMM')}</span>
         </div>
         <div className="card-sub" style={{ marginTop: -6 }}>
           Tap any day to fill it in or change it.
@@ -153,7 +148,7 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
                     key={c}
                     disabled={t.state === 'future'}
                     onClick={() => (tap(), openDay(c))}
-                    aria-label={t.state === 'missed' ? `${when}: didn’t count` : `${when}, day ${t.day}: ${t.state === 'today' ? 'in progress' : t.state}`}
+                    aria-label={`${when}, day ${t.day}: ${t.state === 'today' ? 'today' : t.state === 'future' ? 'to come' : t.state === 'complete' ? 'full day' : `${t.done} of ${t.of} done`}`}
                     style={{
                       aspectRatio: '1',
                       borderRadius: 10,
@@ -171,7 +166,7 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
                     }}
                   >
                     <span style={{ fontSize: 14, fontWeight: 800 }}>{dateNum}</span>
-                    <span style={{ fontSize: 9, fontWeight: 700, opacity: 0.8 }}>{t.day ? `D${t.day}` : '+1'}</span>
+                    <span style={{ fontSize: 9, fontWeight: 700, opacity: 0.8 }}>{t.state === 'partial' ? `${t.done}/${t.of}` : `D${t.day}`}</span>
                   </button>
                 );
               })}
@@ -179,9 +174,9 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
           </div>
         ))}
         <div style={{ display: 'flex', gap: 14, fontSize: 12, color: 'var(--muted)', flexWrap: 'wrap' }}>
-          <Legend swatch={{ background: 'var(--green)' }} label="Complete" />
+          <Legend swatch={{ background: 'var(--green)' }} label="Full day" />
+          <Legend swatch={{ background: 'var(--mint-tint)' }} label="Partly done (tasks done)" />
           <Legend swatch={{ border: '2px solid var(--green)' }} label="Today" />
-          <Legend swatch={{ background: '#fdf0d8', border: '2px solid #f5dfa8' }} label="Didn’t count (+1)" />
           <Legend swatch={{ background: 'var(--line)' }} label="To come" />
         </div>
       </section>

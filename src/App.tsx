@@ -88,7 +88,6 @@ function Main() {
           date={date}
           setDate={setDate}
           openProgress={() => setTab('progress')}
-          openPet={() => setTab('pet')}
           openFood={() => setTab('food')}
           openProfile={() => {
             setProfileFocus('about');

@@ -11,14 +11,15 @@ A simple, good-looking daily tracker for the 75 Hard challenge. It's styled afte
 | Workouts: 90 minutes a day in any mix (say 45 min reformer + 30 min weights + 15 min stairs) | Pick from 100+ activities, set the length and Light / Normal / Hard; favourites log in one tap; Apple Health workouts come in too |
 | Water (any goal; presets for 2–4.5 L) | Tap glasses (250 ml each); also picks up water logged in Lifesum |
 | Read 10 pages | Switch |
-| Follow a diet, no cheat meals | Toggles |
 | No alcohol | Toggle |
 | Steps: weekly goal (70,000 by default), not a daily pass/fail | Apple Health, the iPhone Shortcut, or typed in |
-| Food and calories | The Food tab: search, barcode scan, a photo or a description of the meal, quick add; macros too. Lifesum through Apple Health still works (shown against the calorie target, not pass/fail) |
+| Food and calories, not a tick-box | The Food tab: search, barcode scan, a photo or a description of the meal, quick add; macros too. Shown against the calorie target, never pass/fail |
 
 Not pass/fail, but tracked every day if she wants: **weight** (kg, lb or stone; the Progress tab shows each weigh-in and the 7-day average) and a **progress photo** (private, with a before/after compare). There's also a notes box for each day. The top of Today shows **Eaten · Burned · Steps** as rings, with **net calories** (eaten minus burned) underneath.
 
-**Missed days extend the challenge rather than restarting it.** A day only counts when every task is ticked off. A missed day just doesn't count: it shows as **+1** on the Progress grid, and the finish line moves back a day. The challenge ends on the 75th completed day. If a day was done but not logged, fill it in and it counts again. A manual **Restart at day 1** is still in Profile. Already partway through when signing up? Choose **Earlier**, pick the real start date, and optionally tick off every day so far. Any past day can be opened from the Progress calendar and filled in or changed (there's a one-tap "Tick everything off" for past days). The start date can be changed later in Profile.
+**A relaxed 75: nothing restarts and nothing moves.** It's always 75 calendar days from the start date. Each day is simply logged as it went: a **full day** when all four tasks are ticked off, otherwise **partly done** (the Progress calendar shows how many, e.g. 3/4). The **weekly recap** is where it adds up: the share of tasks done, full days, and each habit across the week. Days can be filled in or changed later from the Progress calendar (with a one-tap "Tick everything off" for past days). A manual **Restart at day 1** is still in Profile. Already partway through when signing up? Choose **Earlier**, pick the real start date, and optionally tick off every day so far. The start date can be changed later in Profile.
+
+The **pet** lives only in the Pet tab: it grows with full days and gets hungry on partly done days, but it's never mentioned anywhere else in the app.
 
 ## Workouts and calories burned
 
@@ -56,21 +57,20 @@ Weigh-ins are stored in kg and shown in her unit. Photos are shrunk on the phone
 
 ## Weekly recap
 
-The first time the app is opened in a new week, a "Your week" card sums up the last Monday–Sunday: days completed (with a dot per day), steps against the weekly goal, average water, workouts, reading, any perfect-week treat and any evolution. Every week can be revisited from Progress → Weekly recap.
+The first time the app is opened in a new week, a "Your week" card sums up the last Monday–Sunday: the share of tasks done, full days (a dot per day; partly done days show e.g. 3/4), steps against the weekly goal, average water, workouts, reading, alcohol-free days and average calories eaten. Every week can be revisited from Progress → Weekly recap.
 
 ## Birthday pass
 
-Everyone adds their birthday at sign-up (or in Profile). From a week before it until a month after, a **birthday pass** appears on Today: use it on any day and that day counts as complete (the pet gets cake). One per birthday, and it can be undone.
+Everyone adds their birthday at sign-up (or in Profile). From a week before it until a month after, a **birthday pass** appears on Today: use it on any day and that day counts as a full day. One per birthday, and it can be undone.
 
 ## Mochi the sloth
 
-A pet keeps her company through the 75 days (Pet tab, plus a card on Today):
+A pet keeps her company through the 75 days, in the Pet tab only:
 
-- **Evolves** with completed days: Baby (days 1–9) → Sprout (10–14) → Mover (15–24) → Athlete (25–34) → Champion (35–49) → Legend (50–75), getting fitter at every stage.
+- **Evolves** with full days: Baby (days 1–9) → Sprout (10–14) → Mover (15–24) → Athlete (25–34) → Champion (35–49) → Legend (50–75), getting fitter at every stage.
 - **Girl, guy or non-binary** sloth, and any name (Pet → Edit). It's alive: it breathes, sways, glances around, reacts to its mood, and does a happy squish with hearts when tapped.
-- **Gets hungry** when days are missed in a row: hungry, then very hungry, then starving from the third missed day. It never dies. Finishing a day fills it back up.
-- **Treats:** every perfect Monday–Sunday week earns one. A treat feeds the pet for a missed day; it doesn't change the 75.
-- **Unicorn:** a rainbow unicorn flies across the screen whenever a day is completed.
+- **Gets hungry** after partly done days in a row: hungry, then very hungry, then starving from the third. It never dies. A full day fills it back up.
+- **Treats:** every perfect Monday–Sunday week earns one. A treat feeds the pet for a partly done day; it doesn't change the 75.
 
 The Pet tab is a Pokémon GO-style scene (`src/components/PetWorld.tsx`). Every evolution stage has its own world (`Biomes.tsx`: meadow, forest glade, mountain trail, lakeside cliffs, sunset peaks, the summit) with its own platform, sloth size and, at the top, a power aura; unlocked worlds can be picked from the scenery button, and the camera button opens a full-screen photo mode. Lighting that follows the time of day, weather that follows the sloth's mood, parallax depth layers you can drag to turn the sloth, a treat you throw in to feed it, and an evolution cinematic (`EvolutionSequence.tsx`). It's built so a real 3D model (GLB) can replace the sprite later. Sharp 4× versions of every sprite live in `public/pet/hd/` (upscaled with Real-ESRGAN animevideov3); the originals are used for small thumbnails. The pet's name, style and treats are saved on the challenge (`supabase/migrations/0002_pet.sql` and `0003_pet_style.sql`). The artwork lives in `public/pet/{girl,guy,nb}/` as one transparent WebP per stage and mood (`{stage}-{mood}.webp`, plus `eating.webp`).
 
@@ -81,7 +81,7 @@ Lifesum has no public API, but it writes the food you log to **Apple Health** as
 There are two ways in:
 
 1. **iPhone app (native, best).** The Capacitor build reads HealthKit directly using [`@capgo/capacitor-health`](https://github.com/Cap-go/capacitor-health). It syncs when the app opens or comes back to the foreground, and when you tap the refresh button.
-2. **Web app (works today).** A browser can't read HealthKit, so an iPhone **Shortcut** reads the last 7 days of steps and posts them in one request (a list of values and a list of dates) to Supabase (`sync_steps` RPC, which hands each day to `ingest_health`) with a private token. **Profile → Apple Health → Set up** walks through it and gives copy buttons for the URL, key and token. Run it with a few *Time of day* automations. (Calories now come from the in-app food diary.)
+2. **Web app (works today).** A browser can't read HealthKit, so an iPhone **Shortcut** reads the last 7 days of steps and posts them in one request (a list of values and a list of dates) to Supabase (`sync_steps` RPC, which hands each day to `ingest_health`) with a private token. **Profile → Apple Health → Set up** walks through it and gives copy buttons for the URL, key and token. Run it with a few *Time of day* automations, or tap **Sync steps** (the ↻ button on Today, or in the Steps sheet), which opens the Shortcut by name (`Hard75` by default; changeable per phone in the set-up sheet) and reloads the steps when she's back. (Calories now come from the in-app food diary.)
 
 Both are optional. Everything can be typed in by hand.
 
@@ -137,7 +137,7 @@ src/
   lib/off.ts              Open Food Facts lookups
   lib/barcode.ts          barcode reading (native detector or zxing)
   lib/energy.ts           resting + workouts + steps = burned; net calories
-  lib/challenge.ts        75 Hard rules: day numbers, task checks, streaks, missed days
+  lib/challenge.ts        75 Hard rules: day numbers, task checks, full and partly done days
   lib/activities.ts       workout library + calorie estimates
   lib/body.ts             weight units, 7-day average, body details for estimates
   lib/photos.ts           shrink + clean photos before upload

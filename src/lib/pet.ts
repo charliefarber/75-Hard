@@ -81,7 +81,7 @@ export function petState(summary: ChallengeSummary, treatDates: string[], today:
   let missedRun = 0;
   for (let i = past.length - 1; i >= 0; i--) {
     const t = past[i];
-    if (t.state === 'missed' && !treated.has(t.date)) missedRun++;
+    if (t.state === 'partial' && !treated.has(t.date)) missedRun++;
     else break;
   }
 
@@ -104,9 +104,9 @@ export function petState(summary: ChallengeSummary, treatDates: string[], today:
     }),
   );
 
-  const usedTreats = treatDates.filter((d) => byDate.get(d)?.state === 'missed').length;
+  const usedTreats = treatDates.filter((d) => byDate.get(d)?.state === 'partial').length;
   const treatsAvailable = Math.max(0, perfectWeeks.length - usedTreats);
-  const lastMissed = [...past].reverse().find((t) => t.state === 'missed' && !treated.has(t.date));
+  const lastMissed = [...past].reverse().find((t) => t.state === 'partial' && !treated.has(t.date));
 
   return {
     stageIndex,

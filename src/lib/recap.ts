@@ -4,12 +4,14 @@ import { workoutGoal } from '../data/types';
 import { bodyStats, dayBurned } from './body';
 import type { ChallengeSummary, DayState } from './challenge';
 import { toISODate } from './challenge';
-import { stageFor, STAGES } from './pet';
 
 export interface RecapDay {
   date: string;
   /** null = outside the challenge (before the start, or still to come). */
   state: DayState | null;
+  /** Tasks done that day, out of `of`. */
+  done: number;
+  of: number;
 }
 
 export interface WeekRecap {
@@ -25,9 +27,13 @@ export interface WeekRecap {
   /** Workout minutes this week vs. what the daily goal adds up to, and active calories burned. */
   workouts: { minutes: number; goalMinutes: number; kcal: number; sessions: number };
   readingDays: number;
-  /** Stage names at the start and end of the week, if the pet evolved. */
-  evolvedTo: string | null;
-  /** Completed days at the end of the week. */
+  /** Days with no alcohol. */
+  soberDays: number;
+  /** Average calories eaten on days with food logged, and how many days had any. */
+  eaten: { avg: number; days: number };
+  /** Share of all the week's tasks that got done, 0–1. */
+  taskShare: number;
+  /** Full days in the challenge by the end of this week. */
   totalCompleted: number;
   headline: string;
 }
@@ -46,7 +52,7 @@ export function weekRecap(
   const dates = Array.from({ length: 7 }, (_, i) => toISODate(addDays(parseISO(monday), i)));
   const days: RecapDay[] = dates.map((date) => {
     const t = byDate.get(date);
-    return { date, state: t && date <= today ? t.state : null };
+    return t && date <= today ? { date, state: t.state, done: t.done, of: t.of } : { date, state: null, done: 0, of: 0 };
   });
   const played = dates.filter((_, i) => days[i].state !== null);
   const inPlay = played.length;
@@ -61,6 +67,9 @@ export function weekRecap(
   let minutes = 0;
   let kcal = 0;
   let readingDays = 0;
+  let soberDays = 0;
+  let eatenSum = 0;
+  let eatenDays = 0;
   for (const d of played) {
     const l = logs[d];
     if (!l) continue;
@@ -78,22 +87,28 @@ export function weekRecap(
     }
     kcal += dayBurned(l, bodyStats(profile, logs, d));
     if (l.pages_read >= profile.reading_goal_pages) readingDays++;
+    if (l.no_alcohol) soberDays++;
+    if (l.calories && l.calories > 0) {
+      eatenSum += l.calories;
+      eatenDays++;
+    }
   }
 
-  // Completed days before and after this week → did the pet evolve?
-  const before = summary.timeline.filter((t) => t.date < monday && t.state === 'complete').length;
-  const after = before + completed;
-  const evolvedTo = stageFor(after) > stageFor(before) ? STAGES[stageFor(after)].name : null;
+  const totalCompleted = summary.timeline.filter((t) => t.date <= dates[6] && t.date <= today && t.state === 'complete').length;
 
   const perfect = inPlay === 7 && completed === 7;
-  const ratio = inPlay ? completed / inPlay : 0;
+  const tasksDone = days.reduce((a, x) => a + x.done, 0);
+  const tasksAll = days.reduce((a, x) => a + x.of, 0);
+  const taskShare = tasksAll ? tasksDone / tasksAll : 0;
   const headline = perfect
     ? 'Perfect week!'
-    : ratio >= 0.7
+    : taskShare >= 0.8
       ? 'Strong week'
-      : ratio > 0
-        ? 'Every day counts'
-        : 'Fresh week ahead';
+      : taskShare >= 0.5
+        ? 'Solid week'
+        : taskShare > 0
+          ? 'Every bit counts'
+          : 'Fresh week ahead';
 
   return {
     monday,
@@ -106,8 +121,10 @@ export function weekRecap(
     water: { avgMl: inPlay ? Math.round(waterSum / inPlay) : 0, daysHit: waterHit },
     workouts: { minutes, goalMinutes: inPlay * workoutGoal(profile), kcal, sessions },
     readingDays,
-    evolvedTo,
-    totalCompleted: after,
+    soberDays,
+    eaten: { avg: eatenDays ? Math.round(eatenSum / eatenDays) : 0, days: eatenDays },
+    taskShare,
+    totalCompleted,
     headline,
   };
 }

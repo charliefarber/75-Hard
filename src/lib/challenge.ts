@@ -4,7 +4,7 @@ import { emptyLog, workoutGoal, workoutMinutes } from '../data/types';
 
 export const CHALLENGE_LENGTH = 75;
 
-export type TaskId = 'workouts' | 'water' | 'reading' | 'diet' | 'alcohol';
+export type TaskId = 'workouts' | 'water' | 'reading' | 'alcohol';
 
 export interface TaskStatus {
   id: TaskId;
@@ -31,9 +31,9 @@ export function finishDate(startDate: string): string {
 }
 
 /**
- * The daily tasks that decide whether a day counts: workout minutes adding up to her daily
- * goal (90 by default, any mix of activities), water, reading, diet and no alcohol. Steps are
- * a weekly goal instead (see weekSteps) and never fail a day.
+ * The daily tasks: workout minutes adding up to her daily goal (90 by default, any mix of
+ * activities), water, reading and no alcohol. Food is logged in the diary rather than ticked off,
+ * and steps are a weekly goal (see weekSteps); neither is a task.
  */
 export function taskStatuses(
   log: DailyLog | undefined,
@@ -46,7 +46,6 @@ export function taskStatuses(
     { id: 'workouts', label: 'Workouts', done: mins >= goal, hint: mins > 0 && mins < goal ? `${goal - mins} min to go` : undefined },
     { id: 'water', label: 'Water', done: l.water_ml >= profile.water_goal_ml },
     { id: 'reading', label: 'Reading', done: l.pages_read >= profile.reading_goal_pages },
-    { id: 'diet', label: 'Diet', done: l.followed_diet && l.no_cheat_meal },
     { id: 'alcohol', label: 'No alcohol', done: l.no_alcohol },
   ];
 }
@@ -66,38 +65,42 @@ export function isDayComplete(log: DailyLog | undefined, profile: Parameters<typ
   return taskStatuses(log, profile).every((t) => t.done);
 }
 
-export type DayState = 'complete' | 'missed' | 'today' | 'future';
+/** complete = every task done; partial = a past day with some (or none) done. */
+export type DayState = 'complete' | 'partial' | 'today' | 'future';
 
 export interface TimelineDay {
   date: string;
   state: DayState;
-  /** Which of the 75 this calendar day is (or will be). Missed days have none: they don't count. */
-  day: number | null;
+  /** Which of the 75 this calendar day is. */
+  day: number;
+  /** Tasks done that day, out of `of` (both 0 for days still to come). */
+  done: number;
+  of: number;
 }
 
 export interface ChallengeSummary {
-  /** The day she's working on today: completed days before today + 1 (0 before the start date). */
+  /** Today's day number, 1–75 (0 before the start date, 75 once it's over). */
   currentDay: number;
-  /** Completed days so far, including today if it's done. */
+  /** Days with every task done so far, including today if it's done. */
   completedDays: number;
-  /** Completed days still needed. */
+  /** Days still to come after today. */
   remaining: number;
-  /** Consecutive complete days ending yesterday (or today, if today is already complete). */
+  /** Consecutive full days ending yesterday (or today, if today is already done). */
   streak: number;
-  /** Past days that weren't fully completed. Each one adds a day to the end. */
-  missedDays: { date: string }[];
-  /** Every calendar day from the start date to the (projected) 75th completed day. */
+  /** Past days that weren't fully done. They don't move anything; they're just logged as they were. */
+  partialDays: { date: string }[];
+  /** The 75 calendar days from the start date. */
   timeline: TimelineDay[];
-  /** Date of the 75th completed day, actual or projected. */
+  /** Day 75. */
   finishDate: string;
   todayComplete: boolean;
+  /** Day 75 has passed. */
   finished: boolean;
 }
 
 /**
- * The "extend, don't restart" version of 75 Hard: a day only counts when every
- * task is done; a missed day just doesn't count, so the finish line moves back
- * by one. The challenge ends on the 75th completed day.
+ * A relaxed 75 Hard: it's always 75 calendar days from the start date. Each day is logged as it
+ * went (all done, or partly done) and nothing restarts or moves the finish line.
  */
 export function summarise(
   challenge: Pick<Challenge, 'start_date'> & Partial<Pick<Challenge, 'credited_days'>>,
@@ -107,37 +110,28 @@ export function summarise(
 ): ChallengeSummary {
   const credited = challenge.credited_days ?? 0;
   const timeline: TimelineDay[] = [];
-  const missedDays: { date: string }[] = [];
+  const partialDays: { date: string }[] = [];
   let completed = 0;
   let todayComplete = false;
-  let offset = 0;
 
-  // Past and today.
-  for (; completed < CHALLENGE_LENGTH; offset++) {
-    const date = toISODate(addDays(parseISO(challenge.start_date), offset));
-    if (date > today) break;
-    const complete = offset < credited || isDayComplete(logs[date], profile);
+  for (let i = 0; i < CHALLENGE_LENGTH; i++) {
+    const date = toISODate(addDays(parseISO(challenge.start_date), i));
+    const day = i + 1;
+    if (date > today) {
+      timeline.push({ date, state: 'future', day, done: 0, of: 0 });
+      continue;
+    }
+    const tasks = taskStatuses(logs[date], profile);
+    const complete = i < credited || isDayComplete(logs[date], profile);
+    const done = complete ? tasks.length : tasks.filter((t) => t.done).length;
+    if (complete) completed++;
     if (date === today) {
       todayComplete = complete;
-      if (complete) completed++;
-      timeline.push({ date, state: complete ? 'complete' : 'today', day: complete ? completed : completed + 1 });
-      offset++;
-      break;
-    }
-    if (complete) {
-      completed++;
-      timeline.push({ date, state: 'complete', day: completed });
+      timeline.push({ date, state: complete ? 'complete' : 'today', day, done, of: tasks.length });
     } else {
-      missedDays.push({ date });
-      timeline.push({ date, state: 'missed', day: null });
+      if (!complete) partialDays.push({ date });
+      timeline.push({ date, state: complete ? 'complete' : 'partial', day, done, of: tasks.length });
     }
-  }
-
-  // Projected days ahead, assuming every remaining day is completed.
-  let next = timeline.length && timeline[timeline.length - 1].state === 'today' ? completed + 2 : completed + 1;
-  for (; next <= CHALLENGE_LENGTH; offset++, next++) {
-    const date = toISODate(addDays(parseISO(challenge.start_date), offset));
-    timeline.push({ date, state: 'future', day: next });
   }
 
   // Streak: back from today (if done) or yesterday.
@@ -149,18 +143,19 @@ export function summarise(
     else break;
   }
 
-  const last75 = timeline.find((t) => t.day === CHALLENGE_LENGTH);
+  const end = finishDate(challenge.start_date);
   const started = challenge.start_date <= today;
+  const currentDay = started ? Math.min(CHALLENGE_LENGTH, dayNumber(challenge.start_date, today)) : 0;
   return {
-    currentDay: started ? Math.min(CHALLENGE_LENGTH, todayComplete ? completed : completed + 1) : 0,
+    currentDay,
     completedDays: completed,
-    remaining: CHALLENGE_LENGTH - completed,
+    remaining: today > end ? 0 : CHALLENGE_LENGTH - currentDay,
     streak,
-    missedDays,
+    partialDays,
     timeline,
-    finishDate: last75?.date ?? today,
+    finishDate: end,
     todayComplete,
-    finished: completed >= CHALLENGE_LENGTH,
+    finished: today > end,
   };
 }
 

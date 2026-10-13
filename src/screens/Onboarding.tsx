@@ -107,8 +107,7 @@ export function Onboarding() {
             </>
           )}
           <p className="card-sub" style={{ margin: 0 }}>
-            Finish line: <strong style={{ color: 'var(--ink)' }}>{format(parseISO(finishDate(startDate)), 'EEEE d MMMM')}</strong>
-            {start === 'earlier' && !tickOff ? ' (later if any past days don’t count)' : ''}
+            Day 75: <strong style={{ color: 'var(--ink)' }}>{format(parseISO(finishDate(startDate)), 'EEEE d MMMM')}</strong>
           </p>
         </section>
 

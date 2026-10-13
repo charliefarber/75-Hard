@@ -12,8 +12,6 @@ const done = (date: string, steps = 10000): DailyLog => ({
   ],
   water_ml: 3200,
   pages_read: 10,
-  followed_diet: true,
-  no_cheat_meal: true,
   no_alcohol: true,
   steps,
 });
@@ -32,18 +30,24 @@ describe('weekly recap', () => {
     expect(r.readingDays).toBe(7);
   });
 
-  it('only counts days inside the challenge and spots evolution', () => {
-    // start Wed 7 Oct with 9 days credited earlier... simulate 8 done before this week then 3 more
+  it('says how the week went, partly done days included', () => {
     const logs: Record<string, DailyLog> = {};
     for (let i = 0; i < 12; i++) logs[d('2026-09-26', i)] = done(d('2026-09-26', i));
+    // 8–11 Oct: water and no alcohol only (2 of 4 tasks), with food logged
+    for (let i = 12; i < 16; i++) logs[d('2026-09-26', i)] = { ...emptyLog(d('2026-09-26', i)), water_ml: 3000, no_alcohol: true, calories: 1800 };
     const s = summarise({ start_date: '2026-09-26' }, logs, profile, '2026-10-12');
     const r = weekRecap('2026-10-05', logs, s, profile, '2026-10-12');
-    // 26 Sep–4 Oct = 9 done before; this week: 5,6,7 done, 8–11 missed
+    // 26 Sep–4 Oct = 9 full days before; this week: 5,6,7 full, 8–11 half done
     expect(r.inPlay).toBe(7);
     expect(r.completed).toBe(3);
-    expect(r.evolvedTo).toBe('Sprout');
+    expect(r.days.map((x) => `${x.state}:${x.done}/${x.of}`)).toEqual([
+      'complete:4/4', 'complete:4/4', 'complete:4/4', 'partial:2/4', 'partial:2/4', 'partial:2/4', 'partial:2/4',
+    ]);
+    expect(r.taskShare).toBeCloseTo(20 / 28);
+    expect(r.soberDays).toBe(7);
+    expect(r.eaten).toEqual({ avg: 1800, days: 4 });
     expect(r.totalCompleted).toBe(12);
-    expect(r.headline).toBe('Every day counts');
+    expect(r.headline).toBe('Solid week');
   });
 
   it('week that started mid-week', () => {

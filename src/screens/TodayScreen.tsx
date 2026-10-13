@@ -6,7 +6,7 @@ import { workoutGoal, workoutMinutes } from '../data/types';
 import { dayNumber, litres, summarise, taskStatuses, toISODate, weekSteps } from '../lib/challenge';
 import { GLASS_ML, Glass } from '../components/Glass';
 import { Ring, Sheet, Toast, ToggleRow, fmt } from '../components/ui';
-import { IconCheck, IconFlame, IconGrid, IconNote, IconRefresh, IconUndo } from '../components/Icons';
+import { IconCheck, IconGrid, IconNote, IconRefresh, IconUndo } from '../components/Icons';
 import { success, tap } from '../lib/haptics';
 import { bodyStats, latestWeight, weighIns, weightTrend, weightUnitFor } from '../lib/body';
 import { favoriteName, newEntryId, recentWorkouts, toggleFavorite, type RecentWorkout } from '../lib/workouts';
@@ -30,22 +30,18 @@ import { Celebration } from '../components/Celebration';
 import { BirthdayCake } from '../components/BirthdayCake';
 import { RecapSheet, markRecapSeen, pendingRecapWeek } from '../components/Recap';
 import { birthdayPass } from '../lib/birthday';
-import { PetSprite } from '../components/PetSprite';
-import { MOODS, STAGES, petState, stageFor } from '../lib/pet';
-import { fullnessColor } from './PetScreen';
+import { canRunShortcuts, runShortcut } from '../lib/shortcut';
 
 export function TodayScreen({
   date,
   setDate,
   openProgress,
-  openPet,
   openFood,
   openProfile,
 }: {
   date: string;
   setDate: (d: string) => void;
   openProgress: () => void;
-  openPet: () => void;
   /** Switch to the Food tab (the full diary). */
   openFood: () => void;
   /** Open Profile at the "about you" section (for calorie estimates). */
@@ -66,6 +62,7 @@ export function TodayScreen({
     syncHealth,
     applyBirthdayPass,
     undoBirthdayPass,
+    refresh,
   } = useApp();
   const [bdayIntro, setBdayIntro] = useState(false);
   // Weekly recap: last week's, once, on the first open of a new week.
@@ -113,16 +110,10 @@ export function TodayScreen({
     wasDone.current = { date, done: allDone };
     if (prev.date !== date || !allDone || prev.done || !summary || !challenge) return;
     success();
-    const petName = challenge.pet_name || 'Mochi';
-    const n = summary.timeline.find((t) => t.date === date)?.day ?? summary.completedDays;
-    const evolved = n === STAGES.find((st) => st.min === n && st.min > 0)?.min;
+    const n = summary.timeline.find((t) => t.date === date)?.day ?? summary.currentDay;
     setParty({
       title: `Day ${n} done!`,
-      subtitle: evolved
-        ? `${petName} evolved into ${STAGES[stageFor(n)].name}!`
-        : passDay
-          ? `Birthday pass used. ${petName} got cake!`
-          : `${petName} is fed and happy.`,
+      subtitle: passDay ? 'Birthday pass used. Enjoy it!' : 'Everything ticked off. Lovely work.',
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allDone, date, summary, challenge]);
@@ -145,15 +136,11 @@ export function TodayScreen({
 
   if (!profile || !challenge || !summary) return null;
 
-  const petName = challenge.pet_name || 'Mochi';
-  const pet = petState(summary, challenge.treat_dates ?? [], today);
   const isToday = date === today;
   const calendarIndex = dayNumber(challenge.start_date, date); // 1 = start date
   const credited = calendarIndex >= 1 && calendarIndex <= challenge.credited_days;
   const byDate = new Map(summary.timeline.map((t) => [t.date, t]));
-  const viewing = byDate.get(date);
-  const headline =
-    calendarIndex < 1 ? 'Starts soon' : viewing?.state === 'missed' ? 'Didn’t count' : `Day ${viewing?.day ?? summary.currentDay}`;
+  const headline = calendarIndex < 1 ? 'Starts soon' : calendarIndex > 75 ? 'After day 75' : `Day ${calendarIndex}`;
   const set = (patch: Partial<DailyLog>) => updateLog(date, (l) => ({ ...l, ...patch }));
 
   // Week strip: the Mon–Sun week containing the selected day.
@@ -172,10 +159,8 @@ export function TodayScreen({
     };
   });
 
-  // Only nudge about recent misses; older ones are visible on Progress.
-  const weekAgo = toISODate(addDays(parseISO(today), -7));
-  const missed = isToday ? summary.missedDays.filter((m) => m.date >= weekAgo) : [];
-  const lastMissed = missed[missed.length - 1];
+  // The web app can't read Health itself: offer to run her Shortcut (once she's set it up, or on an iPhone).
+  const shortcutSync = !health.available && (!!profile.health_synced_at || canRunShortcuts());
 
   const glassCount = Math.min(32, Math.max(Math.ceil(profile.water_goal_ml / GLASS_ML), Math.ceil(log.water_ml / GLASS_ML)));
   const stepWeek = weekSteps(logs, date);
@@ -253,12 +238,18 @@ export function TodayScreen({
             </span>
           </div>
           <div className="today-head-actions">
-            {health.connected && health.available && (
+            {health.connected && health.available ? (
               <button className="icon-btn head-btn" aria-label="Sync Apple Health" onClick={() => syncHealth()}>
                 <span style={{ display: 'flex', animation: health.syncing ? 'spin 1s linear infinite' : undefined }}>
                   <IconRefresh size={20} />
                 </span>
               </button>
+            ) : (
+              shortcutSync && (
+                <button className="icon-btn head-btn" aria-label="Sync steps from Apple Health" onClick={() => (tap(), runShortcut(refresh))}>
+                  <IconRefresh size={20} />
+                </button>
+              )
             )}
             <button className="icon-btn head-btn" aria-label="See all 75 days" onClick={openProgress}>
               <IconGrid size={20} />
@@ -274,7 +265,7 @@ export function TodayScreen({
             max={credited || passDay ? 1 : tasks.length}
             color="var(--mint)"
             track="rgba(255,255,255,0.14)"
-            label={`${doneCount} of ${tasks.length} tasks done`}
+            label={`${doneCount} of ${tasks.length} done`}
           >
             {allDone || credited ? (
               <span className="hero-done">
@@ -286,13 +277,13 @@ export function TodayScreen({
                 <span className="hero-count">
                   {doneCount}/{tasks.length}
                 </span>
-                <span className="hero-unit">tasks done</span>
+                <span className="hero-unit">done today</span>
               </>
             )}
           </Ring>
           <div className="hero-stats">
-            <Stat label="Current streak" value={`${summary.streak} ${summary.streak === 1 ? 'day' : 'days'}`} icon />
-            <Stat label="Finish line" value={format(parseISO(summary.finishDate), 'EEE d MMM')} />
+            <Stat label="Full days so far" value={`${summary.completedDays} of ${Math.max(1, summary.currentDay)}`} />
+            <Stat label="Day 75" value={format(parseISO(summary.finishDate), 'EEE d MMM')} />
           </div>
         </div>
 
@@ -336,7 +327,7 @@ export function TodayScreen({
             <BirthdayCake size={52} />
             <div className="row-text">
               <span className="row-title">Birthday pass used</span>
-              <span className="row-sub">This day counts as complete.</span>
+              <span className="row-sub">This day counts as a full day.</span>
             </div>
             <button className="link-btn" onClick={() => undoBirthdayPass(date)}>
               Undo
@@ -356,7 +347,7 @@ export function TodayScreen({
                       ? `Happy early birthday${profile.display_name ? `, ${profile.display_name}` : ''}!`
                       : 'Your birthday pass is waiting'}
                 </span>
-                <span className="row-sub">One free day: pick any day and it counts as complete, and {challenge.pet_name || 'Mochi'} gets cake.</span>
+                <span className="row-sub">One free day: pick any day and it counts as a full day.</span>
               </div>
             </div>
             {calendarIndex >= 1 && !allDone ? (
@@ -366,26 +357,6 @@ export function TodayScreen({
             ) : (
               <span className="card-sub">Open the day you want to use it on, then tap “Use it”.</span>
             )}
-          </section>
-        )}
-
-        {lastMissed && (
-          <section className="card notice-card">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <h2 className="card-title">{format(parseISO(lastMissed.date), 'EEEE')} didn’t count, so you’ve got an extra day</h2>
-              <p className="card-sub notice-text">
-                Finish line is now {format(parseISO(summary.finishDate), 'EEEE d MMMM')}. If you did everything and just didn’t log it, fill the day in.
-              </p>
-            </div>
-            <button className="btn btn-sm btn-dark" style={{ height: 44 }} onClick={() => setDate(lastMissed.date)}>
-              Fill in {format(parseISO(lastMissed.date), 'EEE d MMM')}
-            </button>
-          </section>
-        )}
-
-        {viewing?.state === 'missed' && (
-          <section className="card notice-card">
-            <p className="card-sub notice-text">This day didn’t count, so it added a day to the end. Tick off everything you did and it’ll count again.</p>
           </section>
         )}
 
@@ -418,8 +389,6 @@ export function TodayScreen({
                           ],
                     water_ml: Math.max(l.water_ml, profile.water_goal_ml),
                     pages_read: Math.max(l.pages_read, profile.reading_goal_pages),
-                    followed_diet: true,
-                    no_cheat_meal: true,
                     no_alcohol: true,
                   }));
                 }}
@@ -442,9 +411,7 @@ export function TodayScreen({
 
         <h2 className="section-label">
           Daily tasks
-          <span>
-            {passDay || credited ? 'all done' : `${doneCount} of ${tasks.length} done`}
-          </span>
+          <span>{passDay || credited ? 'all done' : `${doneCount} of ${tasks.length}`}</span>
         </h2>
 
         <WorkoutsCard
@@ -508,30 +475,8 @@ export function TodayScreen({
             checked={log.pages_read >= profile.reading_goal_pages}
             onChange={(v) => set({ pages_read: v ? profile.reading_goal_pages : 0 })}
           />
-          <DietRow title="Followed my diet" sub="Whatever plan you picked" checked={log.followed_diet} onChange={(v) => set({ followed_diet: v })} />
-          <DietRow title="No cheat meals" sub="Stuck to it all day" checked={log.no_cheat_meal} onChange={(v) => set({ no_cheat_meal: v })} />
-          <DietRow title="No alcohol" sub="Zero drinks" checked={log.no_alcohol} onChange={(v) => set({ no_alcohol: v })} />
+          <DietRow title="No alcohol" checked={log.no_alcohol} onChange={(v) => set({ no_alcohol: v })} />
         </section>
-
-        <button className="card pet-strip" onClick={openPet} aria-label={`${petName}, ${MOODS[pet.mood].label}. Open pet`}>
-          <PetSprite style={challenge.pet_style ?? 'girl'} stage={pet.stageIndex} mood={pet.mood} size={76} />
-          <span className="pet-strip-text">
-            <span className="pet-strip-top">
-              <span className="pet-strip-name">{petName}</span>
-              <span className="pet-strip-mood" style={{ color: fullnessColor(pet.fullness) }}>
-                {MOODS[pet.mood].label}
-              </span>
-            </span>
-            <span className="meter" aria-hidden="true">
-              <span style={{ width: `${pet.fullness}%`, background: fullnessColor(pet.fullness) }} />
-            </span>
-            <span className="card-sub">
-              {pet.stage.name}
-              {pet.next ? ` · ${pet.daysToNext} ${pet.daysToNext === 1 ? 'day' : 'days'} to ${pet.next.name}` : ' · fully evolved'}
-              {pet.treatsAvailable > 0 ? ` · ${pet.treatsAvailable} treat${pet.treatsAvailable === 1 ? '' : 's'}` : ''}
-            </span>
-          </span>
-        </button>
 
         <h2 className="section-label">Check-in</h2>
 
@@ -657,7 +602,20 @@ export function TodayScreen({
         note={
           health.available
             ? 'Apple Health updates this automatically. A number you type is kept unless Health has a higher one.'
-            : 'Type today’s steps from the Health app, or set up the Apple Health shortcut in Profile to fill this in for you.'
+            : shortcutSync
+              ? 'Your Shortcut fills this in from Apple Health. Tap Sync steps now to run it, then come back to the app.'
+              : 'Type today’s steps from the Health app, or set up the Apple Health shortcut in Profile to fill this in for you.'
+        }
+        action={
+          shortcutSync
+            ? {
+                label: 'Sync steps now',
+                onClick: () => {
+                  setSheet(null);
+                  runShortcut(refresh);
+                },
+              }
+            : undefined
         }
         onClose={() => setSheet(null)}
         onSave={(v) => {
@@ -671,7 +629,7 @@ export function TodayScreen({
           <BirthdayCake size={120} />
         </div>
         <p style={{ margin: 0, lineHeight: 1.55, color: 'var(--ink-2)' }}>
-          Here’s a free <strong>birthday pass</strong>. Use it on any day you like, your birthday or any other, and that day counts as complete. {challenge.pet_name || 'Mochi'} gets birthday cake too.
+          Here’s a free <strong>birthday pass</strong>. Use it on any day you like, your birthday or any other, and that day counts as a full day.
         </p>
         <p className="card-sub" style={{ margin: 0 }}>
           Open the day you want, then tap “Use it” on the birthday card.
@@ -695,14 +653,11 @@ export function TodayScreen({
   );
 }
 
-function Stat({ label, value, icon }: { label: string; value: string; icon?: boolean }) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="hero-stat">
       <span className="hero-stat-label">{label}</span>
-      <span className="hero-stat-value">
-        {icon && <IconFlame size={18} style={{ color: 'var(--gold)' }} />}
-        {value}
-      </span>
+      <span className="hero-stat-value">{value}</span>
     </div>
   );
 }
@@ -718,6 +673,7 @@ function NumberSheet({
   initial,
   note,
   presets = [],
+  action,
   onClose,
   onSave,
 }: {
@@ -727,6 +683,8 @@ function NumberSheet({
   initial: number | null;
   note: string;
   presets?: number[];
+  /** An extra button under the note (e.g. run the steps Shortcut). */
+  action?: { label: string; onClick: () => void };
   onClose: () => void;
   onSave: (v: number | null) => void;
 }) {
@@ -773,6 +731,11 @@ function NumberSheet({
         <p className="card-sub" style={{ margin: 0, lineHeight: 1.5 }}>
           {note}
         </p>
+        {action && (
+          <button type="button" className="btn btn-ghost btn-block" onClick={() => (tap(), action.onClick())}>
+            <IconRefresh size={18} /> {action.label}
+          </button>
+        )}
         <button className="btn btn-primary btn-block" type="submit">
           Save
         </button>
