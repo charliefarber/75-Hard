@@ -30,24 +30,32 @@ import { FoodThumb, MacroLine, g1 } from './bits';
 
 export type LoggerMode = 'search' | 'scan' | 'describe' | 'quick';
 
-type Review = (EstimatedItem & { on: boolean; scale: number })[];
+/** One item from a photo / description estimate, already in the diary and still adjustable. */
+type Logged = { item: EstimatedItem; entry: FoodEntry; scale: number; on: boolean };
 
 type Screen =
   | { name: 'home' }
   | { name: 'detail'; food: Food; amount: number; unit: string; editing?: FoodEntry }
   | { name: 'quick'; editing?: FoodEntry }
-  | { name: 'describe'; text?: string }
   | { name: 'working'; label: string; photo?: string }
-  | { name: 'review'; items: Review; source: 'photo' | 'describe'; note: string; photo?: string }
+  | { name: 'logged'; items: Logged[]; source: 'photo' | 'describe'; note: string; photo?: string; text?: string }
   | { name: 'custom'; barcode?: string; foodName?: string; notFound?: boolean };
+
+/** A diary entry for an estimated item at `scale` portions. */
+function estimateEntry(it: EstimatedItem, scale: number, meal: Meal, date: string, source: 'photo' | 'describe'): FoodEntry {
+  const f = foodFromEstimate(it);
+  const e = entryFor(f, scale, f.servings[0].label, meal, date, source);
+  return it.grams >= 5 ? e : { ...e, grams: null };
+}
 
 const STARTERS = ['basic:banana', 'basic:egg', 'basic:oats', 'basic:greek_0', 'basic:chicken_breast', 'basic:rice_white', 'basic:avocado', 'basic:latte'];
 
 /**
  * The one place she logs food. Built for speed:
+ *  - type (or say, with the keyboard's mic) what she ate, e.g. "avocado toast", and it's logged
+ *  - a photo of the plate is logged the same way; both can be adjusted afterwards
  *  - the "+" on any recent, favourite or search result logs it straight away (last amount used)
  *  - the sheet stays open so several things can go in one after another
- *  - barcode, photo, "describe it" and quick add are one tap from the top
  */
 export function FoodLogger({
   open,
@@ -56,6 +64,7 @@ export function FoodLogger({
   mode = 'search',
   edit,
   photo,
+  focus,
   onClose,
   onDeleted,
 }: {
@@ -66,6 +75,8 @@ export function FoodLogger({
   edit?: FoodEntry | null;
   /** A meal photo picked before the sheet opened (the camera button on the Food tab). */
   photo?: File | null;
+  /** Put the cursor in the box straight away (the keyboard comes up). */
+  focus?: boolean;
   onClose: () => void;
   /** After an entry is deleted from the edit view (for an undo toast). */
   onDeleted?: (removed: FoodEntry[]) => void;
@@ -74,10 +85,14 @@ export function FoodLogger({
   const { reportError } = useApp();
   const [meal, setMeal] = useState<Meal>(initialMeal);
   const [screen, setScreen] = useState<Screen>({ name: 'home' });
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
   const [query, setQuery] = useState('');
   const [scanning, setScanning] = useState(false);
-  const [batches, setBatches] = useState<FoodEntry[][]>([]);
-  const added = batches.flat();
+  /** What's been logged in this visit, batch by batch (ids), for the footer and Undo. */
+  const [batches, setBatches] = useState<string[][]>([]);
+  const sessionIds = new Set(batches.flat());
+  const added = food.entriesFor(date).filter((e) => sessionIds.has(e.id));
   const [flash, setFlash] = useState<string | null>(null);
   /** A problem to explain (estimate not available, nothing found…), shown above the content. */
   const [notice, setNotice] = useState<string | null>(null);
@@ -96,7 +111,6 @@ export function FoodLogger({
       if (edit.food && edit.source !== 'quick') setScreen({ name: 'detail', food: edit.food, amount: edit.amount, unit: edit.unit, editing: edit });
       else setScreen({ name: 'quick', editing: edit });
     } else if (mode === 'quick') setScreen({ name: 'quick' });
-    else if (mode === 'describe') setScreen({ name: 'describe' });
     else setScreen({ name: 'home' });
     if (!edit && mode === 'scan') setScanning(true);
     if (!edit && photo) onPhoto(photo);
@@ -112,16 +126,26 @@ export function FoodLogger({
   const lastFor = (key: string) => food.myFoods.find((f) => f.key === key) ?? null;
 
   /** Log straight away, stay in the sheet. */
-  async function logNow(entries: FoodEntry[], label: string) {
+  async function logNow(entries: FoodEntry[], label: string): Promise<boolean> {
     try {
       await food.add(entries);
       success();
-      setBatches((b) => [...b, entries]);
+      setBatches((b) => [...b, entries.map((e) => e.id)]);
       setFlash(label);
       setTimeout(() => setFlash((f) => (f === label ? null : f)), 1600);
+      return true;
     } catch {
-      /* already reported */
+      return false; // already reported
     }
+  }
+
+  /** An estimate goes straight into the diary; the "logged" screen lets her adjust it. */
+  async function logEstimate(res: { items: EstimatedItem[]; note: string }, source: 'photo' | 'describe', extra: { photo?: string; text?: string }) {
+    const items: Logged[] = res.items.map((item) => ({ item, entry: estimateEntry(item, 1, meal, date, source), scale: 1, on: true }));
+    const entries = items.map((i) => i.entry);
+    const ok = await logNow(entries, `${entries.length === 1 ? entries[0].name : `${entries.length} items`} · ${fmt(totals(entries).kcal)} kcal`);
+    if (ok) go({ name: 'logged', items, source, note: res.note, ...extra });
+    else go({ name: 'home' });
   }
 
   function quickLog(f: Food) {
@@ -161,10 +185,10 @@ export function FoodLogger({
       const res = await food.estimate({ action: 'photo', meal, image });
       if (!res.items.length) {
         go({ name: 'home' });
-        setNotice('Couldn’t spot any food in that photo. Try closer, or describe it instead.');
+        setNotice('Couldn’t spot any food in that photo. Try closer, or type what it was instead.');
         return;
       }
-      go({ name: 'review', source: 'photo', note: res.note, photo: preview, items: res.items.map((i) => ({ ...i, on: true, scale: 1 })) });
+      await logEstimate(res, 'photo', { photo: preview });
     } catch (e) {
       go({ name: 'home' });
       if (e instanceof EstimateError) setNotice(e.message);
@@ -173,25 +197,66 @@ export function FoodLogger({
   }
 
   async function onDescribe(text: string) {
-    go({ name: 'working', label: 'Working it out…' });
+    tap();
+    go({ name: 'working', label: `Working out “${text.length > 40 ? text.slice(0, 39) + '…' : text}”…` });
     try {
       const res = await food.estimate({ action: 'describe', meal, text });
       if (!res.items.length) {
-        go({ name: 'describe', text });
+        go({ name: 'home' });
         setNotice('Couldn’t work that one out. Add a little more detail, like how much.');
         return;
       }
-      go({ name: 'review', source: 'describe', note: res.note, items: res.items.map((i) => ({ ...i, on: true, scale: 1 })) });
+      setQuery('');
+      await logEstimate(res, 'describe', { text });
     } catch (e) {
-      go({ name: 'describe', text });
+      go({ name: 'home' });
       if (e instanceof EstimateError) setNotice(e.message);
       else reportError(e);
     }
   }
 
+  /** Adjust an item on the "logged" screen; the diary follows straight away. */
+  async function changeLogged(idx: number, patch: { scale?: number; on?: boolean }) {
+    const sc = screenRef.current;
+    if (sc.name !== 'logged') return;
+    const cur = sc.items[idx];
+    const next: Logged = { ...cur, ...patch };
+    if (patch.scale !== undefined) next.entry = withAmount(cur.entry, patch.scale, cur.entry.unit);
+    const items = sc.items.map((x, i) => (i === idx ? next : x));
+    const updated = { ...sc, items };
+    screenRef.current = updated;
+    setScreen(updated);
+    tap();
+    if (patch.on === false) await food.remove([cur.entry.id]);
+    else if (patch.on === true) await food.restore([next.entry]);
+    else if (next.on) await food.update(next.entry);
+  }
+
+  async function moveLogged(m: Meal) {
+    tap();
+    setMeal(m);
+    const sc = screenRef.current;
+    if (sc.name !== 'logged') return;
+    const items = sc.items.map((x) => ({ ...x, entry: { ...x.entry, meal: m } }));
+    const updated = { ...sc, items };
+    screenRef.current = updated;
+    setScreen(updated);
+    for (const x of items) if (x.on) await food.update(x.entry);
+  }
+
   const sessionKcal = totals(added).kcal;
   const title =
-    screen.name === 'detail' && screen.editing ? 'Edit' : screen.name === 'quick' ? (screen.editing ? 'Edit' : 'Quick add') : screen.name === 'describe' ? 'Describe it' : screen.name === 'review' ? 'Check the estimate' : screen.name === 'custom' ? 'Add your own food' : 'Log food';
+    screen.name === 'detail' && screen.editing
+      ? 'Edit'
+      : screen.name === 'quick'
+        ? screen.editing
+          ? 'Edit'
+          : 'Quick add'
+        : screen.name === 'logged'
+          ? 'Logged'
+          : screen.name === 'custom'
+            ? 'Add your own food'
+            : 'Log food';
 
   return (
     <>
@@ -232,7 +297,8 @@ export function FoodLogger({
             onQuick={quickLog}
             onScan={() => (tap(), setScanning(true))}
             onPhoto={() => (tap(), photoInput.current?.click())}
-            onDescribe={(text) => go({ name: 'describe', text })}
+            onDescribe={onDescribe}
+            focus={!!focus || mode === 'describe'}
             onQuickAdd={() => go({ name: 'quick' })}
             onCustom={(n) => go({ name: 'custom', foodName: n })}
             ai={food.ai !== false}
@@ -241,7 +307,7 @@ export function FoodLogger({
               const entries = await food.logMeal(m, date, meal).catch(() => null);
               if (entries) {
                 success();
-                setBatches((b) => [...b, entries]);
+                setBatches((b) => [...b, entries.map((e) => e.id)]);
                 setFlash(`${m.name} · ${totals(entries).kcal} kcal`);
               }
             }}
@@ -313,8 +379,6 @@ export function FoodLogger({
           />
         )}
 
-        {screen.name === 'describe' && <Describe initial={screen.text} onEstimate={onDescribe} />}
-
         {screen.name === 'working' && (
           <div className="working" aria-live="polite">
             {screen.photo && <img src={screen.photo} alt="" className="working-photo" />}
@@ -323,28 +387,16 @@ export function FoodLogger({
           </div>
         )}
 
-        {screen.name === 'review' && (
-          <ReviewList
+        {screen.name === 'logged' && (
+          <LoggedList
             items={screen.items}
             source={screen.source}
             note={screen.note}
             photo={screen.photo}
             meal={meal}
-            setMeal={setMeal}
-            onChange={(items) => setScreen({ ...screen, items })}
-            onSearch={(q) => {
-              setQuery(q);
-              go({ name: 'home' });
-            }}
-            onAdd={async (items) => {
-              const entries = items.map((it) => {
-                const f = foodFromEstimate(it);
-                const e = entryFor(f, it.scale, f.servings[0].label, meal, date, screen.source);
-                return it.grams >= 5 ? e : { ...e, grams: null };
-              });
-              await logNow(entries, `${entries.length} item${entries.length === 1 ? '' : 's'} · ${totals(entries).kcal} kcal`);
-              go({ name: 'home' });
-            }}
+            onMeal={moveLogged}
+            onChange={changeLogged}
+            onMore={() => go({ name: 'home' })}
           />
         )}
 
@@ -383,9 +435,10 @@ export function FoodLogger({
                 className="link-btn"
                 onClick={async () => {
                   const last = batches[batches.length - 1];
-                  await food.remove(last.map((b) => b.id));
+                  await food.remove(last);
                   setBatches((b) => b.slice(0, -1));
                   setFlash('Removed');
+                  if (screen.name === 'logged') go({ name: 'home' });
                 }}
               >
                 Undo
@@ -433,6 +486,7 @@ function Home({
   onCustom,
   onMeal,
   ai,
+  focus,
   offProxy,
 }: {
   query: string;
@@ -445,12 +499,13 @@ function Home({
   onQuick: (f: Food) => void;
   onScan: () => void;
   onPhoto: () => void;
-  onDescribe: (text?: string) => void;
+  onDescribe: (text: string) => void;
   onQuickAdd: () => void;
   onCustom: (name?: string) => void;
   onMeal: (m: SavedMeal) => void;
   /** Photo and "describe it" estimates are available. */
   ai: boolean;
+  focus?: boolean;
   offProxy: Parameters<typeof searchProducts>[1];
 }) {
   const q = query.trim();
@@ -496,15 +551,22 @@ function Home({
 
   return (
     <>
-      <div className="food-search">
+      <form
+        className="food-search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (ai && q.length >= 2) onDescribe(q);
+        }}
+      >
         <label className="pick-search">
           <IconSearch size={20} />
-          <span className="sr-only">Search foods</span>
+          <span className="sr-only">{ai ? 'What did you eat? Type it, or search' : 'Search foods'}</span>
           <input
             type="search"
-            enterKeyHint="search"
+            enterKeyHint={ai ? 'done' : 'search'}
             autoComplete="off"
-            placeholder="Food or brand"
+            autoFocus={focus}
+            placeholder={ai ? 'What did you eat?' : 'Food or brand'}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -520,10 +582,22 @@ function Home({
             </button>
           )}
         </label>
-      </div>
+      </form>
+
+      {ai && q.length >= 2 && (
+        <button type="button" className="ai-log" onClick={() => onDescribe(q)}>
+          <span className="ai-log-icon" aria-hidden="true">
+            ✨
+          </span>
+          <span className="row-text">
+            <span className="row-title">Log “{q.length > 48 ? q.slice(0, 47) + '…' : q}”</span>
+            <span className="row-sub">Works out the calories and macros, then adds it to {mealLabel(meal).toLowerCase()}</span>
+          </span>
+        </button>
+      )}
 
       {!q && (
-        <div className={`log-actions${ai ? '' : ' two'}`}>
+        <div className={`log-actions${ai ? ' three' : ' two'}`}>
           <button type="button" className="log-action" onClick={onScan}>
             <span className="log-action-icon scan" aria-hidden="true">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -533,23 +607,12 @@ function Home({
             Scan
           </button>
           {ai && (
-            <>
-              <button type="button" className="log-action" onClick={onPhoto}>
-                <span className="log-action-icon photo" aria-hidden="true">
-                  <IconCamera size={22} />
-                </span>
-                Photo
-              </button>
-              <button type="button" className="log-action" onClick={() => onDescribe()}>
-                <span className="log-action-icon describe" aria-hidden="true">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" />
-                    <path d="M13.5 6.5l4 4" />
-                  </svg>
-                </span>
-                Describe
-              </button>
-            </>
+            <button type="button" className="log-action" onClick={onPhoto}>
+              <span className="log-action-icon photo" aria-hidden="true">
+                <IconCamera size={22} />
+              </span>
+              Photo
+            </button>
           )}
           <button type="button" className="log-action" onClick={onQuickAdd}>
             <span className="log-action-icon quick" aria-hidden="true">
@@ -561,6 +624,7 @@ function Home({
           </button>
         </div>
       )}
+      {!q && ai && <p className="ai-tip">Type what you ate, like “avocado toast and a latte”, or tap the 🎤 on your keyboard and say it.</p>}
 
       {!q && favorites.length > 0 && (
         <Group label="Favourites">
@@ -634,17 +698,6 @@ function Home({
       )}
       {q && (
         <div className="not-found-actions">
-          {ai && (
-            <button type="button" className="pick-custom" onClick={() => onDescribe(q)}>
-              <span className="act-icon" style={{ width: 40, height: 40, borderRadius: 13 }} aria-hidden="true">
-                ✨
-              </span>
-              <span className="row-text">
-                <span className="row-title">Estimate “{q}”</span>
-                <span className="row-sub">Works out calories and macros from the description</span>
-              </span>
-            </button>
-          )}
           <button type="button" className="pick-custom" onClick={() => onCustom(q)}>
             <span className="act-icon" style={{ width: 40, height: 40, borderRadius: 13 }} aria-hidden="true">
               <IconPlus size={20} />
@@ -957,138 +1010,86 @@ function QuickAdd({
   );
 }
 
-// ---------------------------------------------------------------- describe → estimate
+// ---------------------------------------------------------------- logged from an estimate
 
-function Describe({ initial, onEstimate }: { initial?: string; onEstimate: (text: string) => void }) {
-  const [text, setText] = useState(initial ?? '');
-  const ok = text.trim().length >= 3;
-  return (
-    <form
-      className="describe"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (ok) onEstimate(text.trim());
-      }}
-    >
-      <label className="field">
-        What did you have?
-        <textarea
-          className="input"
-          autoFocus
-          maxLength={500}
-          rows={4}
-          placeholder="e.g. 2 scrambled eggs on sourdough with butter, and a flat white"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-      </label>
-      <p className="card-sub" style={{ margin: 0, lineHeight: 1.5 }}>
-        Amounts help (“a large bowl”, “2 slices”). You’ll see each item and can adjust it before it’s added.
-      </p>
-      <button type="submit" className="btn btn-primary btn-block" disabled={!ok}>
-        ✨ Estimate it
-      </button>
-    </form>
-  );
-}
-
-// ---------------------------------------------------------------- review an estimate
-
-function ReviewList({
+function LoggedList({
   items,
   source,
   note,
   photo,
   meal,
-  setMeal,
+  onMeal,
   onChange,
-  onSearch,
-  onAdd,
+  onMore,
 }: {
-  items: Review;
+  items: Logged[];
   source: 'photo' | 'describe';
   note: string;
   photo?: string;
   meal: Meal;
-  setMeal: (m: Meal) => void;
-  onChange: (items: Review) => void;
-  onSearch: (q: string) => void;
-  onAdd: (items: Review) => Promise<void>;
+  onMeal: (m: Meal) => void;
+  onChange: (idx: number, patch: { scale?: number; on?: boolean }) => void;
+  onMore: () => void;
 }) {
-  const [busy, setBusy] = useState(false);
-  const chosen = items.filter((i) => i.on);
-  const sum = chosen.reduce((a, i) => ({ kcal: a.kcal + i.kcal * i.scale, p: a.p + i.protein * i.scale, c: a.c + i.carbs * i.scale, f: a.f + i.fat * i.scale }), { kcal: 0, p: 0, c: 0, f: 0 });
-  const set = (idx: number, patch: Partial<Review[number]>) => onChange(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
-
-  if (!items.length)
-    return (
-      <div className="working">
-        {photo && <img src={photo} alt="" className="working-photo" />}
-        <p style={{ margin: 0, textAlign: 'center' }}>{note || 'Couldn’t spot any food there.'} Try another photo, or search instead.</p>
-      </div>
-    );
-
+  const on = items.filter((i) => i.on);
+  const t = totals(on.map((i) => i.entry));
   return (
     <div className="review">
       {photo && <img src={photo} alt="Your meal" className="review-photo" />}
+      <div className="logged-total">
+        <span className="logged-check" aria-hidden="true">
+          <IconCheck size={18} strokeWidth={3} />
+        </span>
+        <span className="row-text">
+          <strong>
+            {on.length ? `${fmt(t.kcal)} kcal added to ${mealLabel(meal).toLowerCase()}` : 'Nothing added'}
+          </strong>
+          <MacroLine p={t.protein} c={t.carbs} f={t.fat} />
+        </span>
+      </div>
       <div className="pick-list">
         {items.map((it, i) => (
-          <div key={i} className={`review-item${it.on ? '' : ' off'}`}>
-            <button type="button" className={`check${it.on ? ' on' : ''}`} aria-pressed={it.on} aria-label={`Include ${it.name}`} onClick={() => (tap(), set(i, { on: !it.on }))}>
+          <div key={it.entry.id} className={`review-item${it.on ? '' : ' off'}`}>
+            <button
+              type="button"
+              className={`check${it.on ? ' on' : ''}`}
+              aria-pressed={it.on}
+              aria-label={it.on ? `Remove ${it.item.name}` : `Add ${it.item.name} back`}
+              onClick={() => onChange(i, { on: !it.on })}
+            >
               {it.on && <IconCheck size={16} strokeWidth={3} />}
             </button>
             <div className="row-text">
-              <span className="row-title">{it.name}</span>
+              <span className="row-title">{it.item.name}</span>
               <span className="row-sub">
-                {it.portion}
-                {it.grams ? ` · ${Math.round(it.grams * it.scale)} g` : ''}
-                {it.confidence < 0.5 ? ' · rough guess' : ''}
+                {it.item.portion}
+                {it.item.grams ? ` · ${Math.round(it.item.grams * it.scale)} g` : ''}
+                {it.item.confidence < 0.5 ? ' · rough guess' : ''}
               </span>
-              <MacroLine p={it.protein * it.scale} c={it.carbs * it.scale} f={it.fat * it.scale} />
+              <MacroLine p={it.entry.protein_g} c={it.entry.carbs_g} f={it.entry.fat_g} />
             </div>
             <div className="review-amount">
-              <strong>{fmt(Math.round(it.kcal * it.scale))}</strong>
+              <strong>{fmt(Math.round(it.entry.kcal))}</strong>
               <div className="mini-stepper">
-                <button type="button" aria-label={`Less ${it.name}`} onClick={() => set(i, { scale: Math.max(0.25, it.scale - 0.25) })}>
+                <button type="button" aria-label={`Less ${it.item.name}`} disabled={!it.on} onClick={() => onChange(i, { scale: Math.max(0.25, it.scale - 0.25) })}>
                   −
                 </button>
                 <span>{niceNumber(it.scale)}×</span>
-                <button type="button" aria-label={`More ${it.name}`} onClick={() => set(i, { scale: Math.min(4, it.scale + 0.25) })}>
+                <button type="button" aria-label={`More ${it.item.name}`} disabled={!it.on} onClick={() => onChange(i, { scale: Math.min(4, it.scale + 0.25) })}>
                   +
                 </button>
               </div>
-              <button type="button" className="link-btn tiny" onClick={() => onSearch(it.name)}>
-                Search
-              </button>
             </div>
           </div>
         ))}
       </div>
-      <div className="review-total">
-        <span>
-          <strong>{fmt(Math.round(sum.kcal))} kcal</strong>
-        </span>
-        <MacroLine p={sum.p} c={sum.c} f={sum.f} />
-      </div>
+      <MealPick meal={meal} setMeal={onMeal} />
       <p className="card-sub" style={{ margin: 0, lineHeight: 1.5 }}>
-        {source === 'photo' ? 'Estimated from your photo' : 'Estimated from your description'}: portions can be off, so nudge them with − / + if you know better.
+        {source === 'photo' ? 'Estimated from your photo.' : 'Estimated from what you typed.'} Untick anything that’s wrong, or use − / + if the portion was bigger or smaller.
         {note ? ` ${note}` : ''}
       </p>
-      <MealPick meal={meal} setMeal={setMeal} />
-      <button
-        type="button"
-        className="btn btn-primary btn-block"
-        disabled={!chosen.length || busy}
-        onClick={async () => {
-          setBusy(true);
-          try {
-            await onAdd(chosen);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        Add {chosen.length === 1 ? '1 item' : `${chosen.length} items`} to {mealLabel(meal)}
+      <button type="button" className="btn btn-ghost btn-block" onClick={onMore}>
+        Log something else
       </button>
     </div>
   );

@@ -16,7 +16,7 @@ import { EnergyCard, EnergySheet } from '../components/Energy';
 import { dayEnergy, defaultActiveGoal } from '../lib/energy';
 import { useFood } from '../data/FoodData';
 import type { FoodEntry, Meal } from '../data/foodTypes';
-import { totals } from '../lib/nutrition';
+import { mealForTime, totals } from '../lib/nutrition';
 import { FoodLogger } from '../components/food/FoodLogger';
 import { TodayFood } from '../components/food/TodayFood';
 import { useMinuteTick } from '../lib/useMinuteTick';
@@ -77,7 +77,7 @@ export function TodayScreen({
     setRecapWeek(pendingRecapWeek(challenge.start_date, today));
   }, [challenge, today, recapChecked]);
   const [sheet, setSheet] = useState<null | 'steps' | 'burned' | 'weight'>(null);
-  const [logger, setLogger] = useState<null | { meal: Meal; edit?: FoodEntry }>(null);
+  const [logger, setLogger] = useState<null | { meal: Meal; edit?: FoodEntry; focus?: boolean; photo?: File }>(null);
   const food = useFood();
   const { ensure } = food;
   useEffect(() => {
@@ -430,7 +430,15 @@ export function TodayScreen({
           </div>
         )}
 
-        <TodayFood entries={entries} outside={outside} onAdd={(meal) => setLogger({ meal })} onOpen={openFood} />
+        <TodayFood
+          entries={entries}
+          outside={outside}
+          ai={food.ai !== false}
+          onAdd={(meal) => setLogger({ meal })}
+          onOpen={openFood}
+          onType={() => setLogger({ meal: mealForTime(), focus: true })}
+          onPhoto={(photo) => setLogger({ meal: mealForTime(), photo })}
+        />
 
         <h2 className="section-label">
           Daily tasks
@@ -557,6 +565,8 @@ export function TodayScreen({
         date={date}
         meal={logger?.meal ?? 'snacks'}
         edit={logger?.edit}
+        focus={logger?.focus}
+        photo={logger?.photo}
         onClose={() => setLogger(null)}
         onDeleted={(removed) => setToast({ message: `Deleted ${removed[0]?.name ?? 'item'}`, undo: () => food.restore(removed) })}
       />

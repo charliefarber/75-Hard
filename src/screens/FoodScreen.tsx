@@ -23,7 +23,7 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
   const [goalsOpen, setGoalsOpen] = useState(false);
   const now = useMinuteTick(date === today);
   const food = useFood();
-  const [logger, setLogger] = useState<null | { meal: Meal; mode: LoggerMode; edit?: FoodEntry; photo?: File }>(null);
+  const [logger, setLogger] = useState<null | { meal: Meal; mode: LoggerMode; edit?: FoodEntry; photo?: File; focus?: boolean }>(null);
   const photoInput = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState<null | { meal: Meal; name: string }>(null);
   const [toast, setToast] = useState<null | { message: string; undo?: () => void }>(null);
@@ -111,9 +111,9 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
       </section>
 
       <div className="log-bar">
-        <button type="button" className="log-bar-search" onClick={() => (tap(), setLogger({ meal: mealForTime(), mode: 'search' }))}>
-          <IconSearch size={20} />
-          <span>Search foods</span>
+        <button type="button" className="log-bar-search" onClick={() => (tap(), setLogger({ meal: mealForTime(), mode: 'search', focus: true }))}>
+          {food.ai !== false ? <span aria-hidden="true">✨</span> : <IconSearch size={20} />}
+          <span>{food.ai !== false ? 'What did you eat?' : 'Search foods'}</span>
         </button>
         <button type="button" className="log-bar-btn" aria-label="Scan a barcode" onClick={() => (tap(), setLogger({ meal: mealForTime(), mode: 'scan' }))}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -197,6 +197,7 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
         mode={logger?.mode}
         edit={logger?.edit}
         photo={logger?.photo}
+        focus={logger?.focus}
         onClose={() => setLogger(null)}
         onDeleted={(removed) => setToast({ message: `Deleted ${removed[0]?.name ?? 'item'}`, undo: () => food.restore(removed) })}
       />

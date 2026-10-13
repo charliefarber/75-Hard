@@ -1,8 +1,9 @@
 import type { FoodEntry, Meal } from '../../data/foodTypes';
 import { MEALS } from '../../data/foodTypes';
 import { byMeal, totals } from '../../lib/nutrition';
+import { useRef } from 'react';
 import { fmt } from '../ui';
-import { IconChevron, IconPlus } from '../Icons';
+import { IconCamera, IconChevron, IconPlus } from '../Icons';
 import { MacroLine } from './bits';
 import { tap } from '../../lib/haptics';
 
@@ -12,15 +13,24 @@ export const MEAL_EMOJI: Record<Meal, string> = { breakfast: '🥣', lunch: '�
 export function TodayFood({
   entries,
   outside,
+  ai,
   onAdd,
   onOpen,
+  onType,
+  onPhoto,
 }: {
   entries: FoodEntry[];
   /** Calories that came from Lifesum or were typed in, while the diary is empty. */
   outside: { kcal: number; from: string } | null;
+  /** Photo and type-it logging are switched on. */
+  ai: boolean;
   onAdd: (meal: Meal) => void;
   onOpen: () => void;
+  /** Open the logger with the keyboard up, ready to type what she ate. */
+  onType: () => void;
+  onPhoto: (file: File) => void;
 }) {
+  const photoInput = useRef<HTMLInputElement>(null);
   const meals = byMeal(entries);
   const t = totals(entries);
   return (
@@ -37,12 +47,34 @@ export function TodayFood({
               {fmt(outside.kcal)} kcal from {outside.from}
             </span>
           ) : (
-            <span className="card-sub">Tap + to log a meal</span>
+            <span className="card-sub">{ai ? 'Type it, snap it, or tap + on a meal' : 'Tap + to log a meal'}</span>
           )}
         </div>
         <button type="button" className="link-btn diary-link" onClick={() => (tap(), onOpen())}>
           Diary <IconChevron size={16} />
         </button>
+      </div>
+      <div className="eat-bar">
+        <button type="button" className="eat-bar-input" onClick={() => (tap(), onType())}>
+          <span aria-hidden="true">{ai ? '✨' : '🔍'}</span>
+          <span>{ai ? 'What did you eat?' : 'Search foods'}</span>
+        </button>
+        {ai && (
+          <button type="button" className="eat-bar-cam" aria-label="Snap a photo of a meal" onClick={() => (tap(), photoInput.current?.click())}>
+            <IconCamera size={22} />
+          </button>
+        )}
+        <input
+          ref={photoInput}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (f) onPhoto(f);
+          }}
+        />
       </div>
       <div className="meal-rows">
         {MEALS.map((m) => {
