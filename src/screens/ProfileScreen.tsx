@@ -657,12 +657,12 @@ function Step({ n, children }: { n: number; children: ReactNode }) {
 
 function ShortcutSheet({ open, onClose, token }: { open: boolean; onClose: () => void; token: string }) {
   const { regenerateSyncToken } = useApp();
-  const endpoint = `${supabaseUrl ?? ''}/rest/v1/rpc/ingest_health`;
+  const endpoint = `${supabaseUrl ?? ''}/rest/v1/rpc/sync_steps`;
   return (
     <Sheet open={open} onClose={onClose} title="Sync Apple Health with a Shortcut">
       <p style={{ margin: 0, color: 'var(--muted)', lineHeight: 1.5, fontSize: 14 }}>
-        Until this is an App Store app, an iPhone Shortcut sends steps from Apple Health. It sends each of the last 7 days with its
-        date, so late-evening steps get filled in and every run corrects those days. Set it up once and it runs on its own.
+        Until this is an App Store app, an iPhone Shortcut sends steps from Apple Health: the last 7 days in one go, each with its
+        date, so late-evening steps get filled in and every run corrects those days. Two actions, set up once.
       </p>
       <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Step n={1}>
@@ -670,21 +670,15 @@ function ShortcutSheet({ open, onClose, token }: { open: boolean; onClose: () =>
           <strong>Steps</strong>, Start Date <strong>is in the last 7 days</strong>, Group By <strong>Day</strong>.
         </Step>
         <Step n={2}>
-          Add <strong>Repeat with Each</strong> (it picks up the Health Samples). Everything below goes inside the repeat.
+          Add <strong>Get Contents of URL</strong> with the URL below. Method <strong>POST</strong>; header <code>apikey</code> = the
+          key below; Request Body <strong>JSON</strong> with three <strong>Text</strong> fields:
+          <br />• <code>p_token</code>: the token below
+          <br />• <code>p_steps</code>: <strong>Health Samples</strong>, tapped and set to <strong>Value</strong>
+          <br />• <code>p_dates</code>: <strong>Health Samples</strong>, tapped and set to <strong>Start Date</strong>
         </Step>
         <Step n={3}>
-          Add <strong>Format Date</strong>. Tap the date, choose <strong>Repeat Item</strong>, then tap it again and pick{' '}
-          <strong>Start Date</strong>. Date Format <strong>Custom</strong>: <code>yyyy-MM-dd</code>.
-        </Step>
-        <Step n={4}>
-          Add <strong>Get Contents of URL</strong> with the URL below. Method <strong>POST</strong>; header <code>apikey</code> = the
-          key below; Request Body <strong>JSON</strong> with <code>p_token</code> (Text: the token below), <code>p_steps</code>{' '}
-          (Number: <strong>Repeat Item</strong>, tapped and set to <strong>Value</strong>) and <code>p_date</code> (Text:{' '}
-          <strong>Formatted Date</strong>).
-        </Step>
-        <Step n={5}>
-          In <strong>Automation</strong>, add a few <strong>Time of Day</strong> ones (say 08:00, 12:00, 18:00, 22:00), pick this
-          shortcut and choose <strong>Run Immediately</strong>.
+          Run it once. It should answer with the days it saved. Then in <strong>Automation</strong> add a few{' '}
+          <strong>Time of Day</strong> ones (say 08:00, 12:00, 18:00, 22:00) with <strong>Run Immediately</strong>.
         </Step>
       </ol>
       <CopyField label="URL" value={endpoint} />
