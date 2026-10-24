@@ -22,9 +22,10 @@ describe('steps', () => {
     expect(workoutSteps([run(30), reformer(45)])).toBe(4860);
   });
   it('turns everyday steps into active calories', () => {
+    // Net cost of walking is about 0.5 kcal per kg per km: 10,000 steps (~7.5 km) at 64 kg ≈ 240.
     const k = stepKcal(10000, sierra);
-    expect(k).toBeGreaterThan(250);
-    expect(k).toBeLessThan(400);
+    expect(k).toBeGreaterThan(180);
+    expect(k).toBeLessThan(300);
     expect(stepKcal(0, sierra)).toBe(0);
     expect(stepKcal(-50, sierra)).toBe(0);
   });

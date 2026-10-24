@@ -107,7 +107,7 @@ button:disabled { cursor: default; opacity: 0.5; }
   border-top: 1px solid #e6e9e1;
   padding-bottom: var(--safe-bottom);
 }
-.tabbar-inner { max-width: 480px; margin: 0 auto; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); height: var(--tabbar-h); }
+.tabbar-inner { max-width: 480px; margin: 0 auto; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); height: var(--tabbar-h); }
 .tab {
   border: 0; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
   color: var(--faint); font-size: 11px; font-weight: 600; transition: color 0.2s;
@@ -115,6 +115,10 @@ button:disabled { cursor: default; opacity: 0.5; }
 .tab[aria-current='page'] { color: var(--forest); font-weight: 700; }
 .tab svg { transition: transform 0.25s var(--ease); }
 .tab:active svg { transform: scale(0.88); }
+
+/* Meal icons: white line drawings on forest green (components/food/MealIcon.tsx) */
+.usual-tag { font-size: 12px; font-weight: 800; color: var(--green-ink); }
+.meal-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; background: var(--forest); color: #fff; }
 
 /* ---------- Cards ---------- */
 

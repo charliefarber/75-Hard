@@ -15,23 +15,21 @@ A simple, good-looking daily tracker for the 75 Hard challenge. It's styled afte
 | Steps: weekly goal (70,000 by default), not a daily pass/fail | Apple Health, the iPhone Shortcut, or typed in |
 | Food and calories, not a tick-box | The Food tab: search, barcode scan, a photo or a description of the meal, quick add; macros too. Shown against the calorie target, never pass/fail |
 
-Not pass/fail, but tracked every day if she wants: **weight** (kg, lb or stone; the Progress tab shows each weigh-in and the 7-day average) and a **progress photo** (private, with a before/after compare). There's also a notes box for each day. The top of Today shows **Eaten · Burned · Steps** as rings, with **net calories** (eaten minus burned) underneath.
+Not pass/fail, but tracked every day if she wants: **weight** (kg, lb or stone; the Progress tab shows each weigh-in and the 7-day average) and a **progress photo** (private, with a before/after compare). There's also a notes box for each day. The top of Today shows **Eaten · Burned · Steps** as rings (calories left under Eaten), with **net calories** underneath once she's logged some food.
 
 **A relaxed 75: nothing restarts and nothing moves.** It's always 75 calendar days from the start date. Each day is simply logged as it went: a **full day** when all four tasks are ticked off, otherwise **partly done** (the Progress calendar shows how many, e.g. 3/4). The **weekly recap** is where it adds up: the share of tasks done, full days, and each habit across the week. Days can be filled in or changed later from the Progress calendar (with a one-tap "Tick everything off" for past days). A manual **Restart at day 1** is still in Profile. Already partway through when signing up? Choose **Earlier**, pick the real start date, and optionally tick off every day so far. The start date can be changed later in Profile.
-
-The **pet** lives only in the Pet tab: it grows with full days and gets hungry on partly done days, but it's never mentioned anywhere else in the app.
 
 ## Workouts and calories burned
 
 No heart-rate strap needed. Each of the ~105 activities in `src/lib/activities.ts` has three energy costs (light / normal / hard, in METs) from the Compendium of Physical Activities, the research table most fitness apps use, and each says what that effort means for that activity ("advanced, jumpboard, little rest" for reformer, "12 min/mile" for running). Calories are **active** calories, the extra burned by working out:
 
 ```
-(MET × 3.5 × weight kg ÷ 200 − resting burn per minute) × minutes
+(MET − 1) × resting burn per minute × minutes
 ```
 
-Resting burn comes from Mifflin-St Jeor (weight from her latest weigh-in, height and sex from Profile → About you, age from her birthday), or 1 MET until those are filled in. Estimates are worked out when shown, so they sharpen as she adds details.
+A MET is a multiple of her own resting rate, so the workout and the resting burn it replaces are measured the same way. Resting burn comes from Mifflin-St Jeor (weight from her latest weigh-in, height and sex from Profile → About you, age from her birthday), or the textbook 1 MET (3.5 ml/kg/min) until those are filled in. (Earlier versions measured the workout with the textbook MET but took off her Mifflin rate, which overstated a 90-minute day by about a fifth.) Estimates are worked out when shown, so they sharpen as she adds details.
 
-**Total and active.** The Burned ring on Today fills with **active** calories (workouts plus everyday walking from her step count) towards an active goal (Profile → Food & calories; by default her workout goal at normal effort plus her step goal). Under it is the **total**: resting burn plus active. For today, resting only counts the hours that have passed, so the numbers are true right now. Steps taken during a logged walk or run are already in that workout, so they're taken off before steps are counted (`src/lib/energy.ts`). **Net calories** = eaten − total. Tap Burned or Net on Today for the full breakdown; Progress shows net calories for each day of the week.
+**Calories left, active and net.** **Calories left** (under the Eaten ring on Today, and in the Food tab's ring) is her calorie target minus what she's eaten. Workouts never add calories back, because her target already includes her deficit. The Burned ring fills with **active** calories only (workouts plus everyday walking from her step count), towards an active goal (Profile → Food & calories; by default her workout goal at normal effort plus her step goal), so it starts at zero each morning and fills up through the day. Steps taken during a logged walk or run are already in that workout, so they're taken off before steps are counted (`src/lib/energy.ts`). **Net calories** = eaten − everything burned (resting so far + active), and only show once she's logged some food, with how many meals that covers ("2 of 4 meals logged"), since a meal not logged yet isn't a deficit. For today, resting only counts the hours that have passed. Tap Burned or Net on Today for the full breakdown; Progress shows net calories for each day of the week.
 
 The day's workouts count once their minutes add up to the daily total (Profile → Daily goals → Workouts, 90 by default). Older days logged as "workout 1 / workout 2" are read the same way.
 
@@ -44,8 +42,15 @@ The Food tab (and the meal rows on Today) log food in a few taps. Logging speed 
 - **Barcode scan** reads the barcode in the camera live (the phone's own detector where there is one, otherwise a bundled reader). It also works from a photo of the barcode or by typing the number. A product that isn't in Open Food Facts can be copied from the label once, and the next scan finds it.
 - **Photo** and **Describe it** estimate a whole meal ("2 scrambled eggs on sourdough with butter") as separate items she can tick, untick and resize before adding (see the setup below).
 - **Quick add**: just calories, optionally a name and macros.
-- **Favourites, Recent** (sorted for the meal she's logging), **saved meals** ("Usual breakfast" in one tap), **copy yesterday's** lunch.
+- **Your usual**: an empty meal offers what she has most often had for it on similar days (weekdays with weekdays, weekends with weekends) over the last two weeks, logged in one tap ("You've had this on 4 of the last 5 weekdays"). Worked out from her diary (`src/lib/usual.ts`), so there's nothing to set up. Today shows it for the meal coming up; the add sheet shows it at the top.
+- **One tap on an empty meal**: alongside her usual, chips for **the same as yesterday**, a **meal-prep portion**, **saved meals** she's chosen for that meal, and (for snacks) her **go-to snacks**. Every one-tap log has Undo.
+- **Saved meals**: "Save as a meal" on any meal with two or more foods; untick anything that wasn't part of it and choose which meals to offer it at. All saved meals are also listed in the add sheet.
+- **Favourites** and **Recent** (sorted for the meal she's logging).
 - **Macros**: protein, carbs and fat for every food, and targets from Profile → Food & calories or the Food tab (a balanced, high-protein or lower-carb split of her calorie target, or her own grams).
+
+### Meal prep
+
+For batch cooking. On the Food tab, **Meal prep → +** opens the batch: she adds everything that went in (search, barcode, photo or quick add, the same as logging food, but nothing goes in the diary), splits it into equal portions, and can log one straight away. Each portion she eats is one diary entry; the add sheet lists her batches with **½ · 1 · 1½** and how many portions are left, and empty lunches and dinners offer a portion in one tap. A portion's food key is `prep:<batch id>`, so the batch counts down however the portion got into the diary or left it: logged, copied from yesterday, changed from ½ to 1, deleted, or undone (`src/lib/mealPrep.ts`, `src/data/FoodData.tsx`). Needs migration `0016_meal_prep.sql`.
 
 The day's total is written to `daily_logs.calories` as the diary changes, so Today, the weekly recap and Progress all agree. Moving over from Lifesum: the first time something is logged in the diary on a day that already has Lifesum calories, those calories become one "Logged in Lifesum" entry so the day's total doesn't drop, and from then on the diary wins over Apple Health for that day.
 
@@ -63,17 +68,6 @@ The first time the app is opened in a new week, a "Your week" card sums up the l
 
 Everyone adds their birthday at sign-up (or in Profile). From a week before it until a month after, a **birthday pass** appears on Today: use it on any day and that day counts as a full day. One per birthday, and it can be undone.
 
-## Mochi the sloth
-
-A pet keeps her company through the 75 days, in the Pet tab only:
-
-- **Evolves** with full days: Baby (days 1–9) → Sprout (10–14) → Mover (15–24) → Athlete (25–34) → Champion (35–49) → Legend (50–75), getting fitter at every stage.
-- **Girl, guy or non-binary** sloth, and any name (Pet → Edit). It's alive: it breathes, sways, glances around, reacts to its mood, and does a happy squish with hearts when tapped.
-- **Gets hungry** after partly done days in a row: hungry, then very hungry, then starving from the third. It never dies. A full day fills it back up.
-- **Treats:** every perfect Monday–Sunday week earns one. A treat feeds the pet for a partly done day; it doesn't change the 75.
-
-The Pet tab is a Pokémon GO-style scene (`src/components/PetWorld.tsx`). Every evolution stage has its own world (`Biomes.tsx`: meadow, forest glade, mountain trail, lakeside cliffs, sunset peaks, the summit) with its own platform, sloth size and, at the top, a power aura; unlocked worlds can be picked from the scenery button, and the camera button opens a full-screen photo mode. Lighting that follows the time of day, weather that follows the sloth's mood, parallax depth layers you can drag to turn the sloth, a treat you throw in to feed it, and an evolution cinematic (`EvolutionSequence.tsx`). It's built so a real 3D model (GLB) can replace the sprite later. Sharp 4× versions of every sprite live in `public/pet/hd/` (upscaled with Real-ESRGAN animevideov3); the originals are used for small thumbnails. The pet's name, style and treats are saved on the challenge (`supabase/migrations/0002_pet.sql` and `0003_pet_style.sql`). The artwork lives in `public/pet/{girl,guy,nb}/` as one transparent WebP per stage and mood (`{stage}-{mood}.webp`, plus `eating.webp`).
-
 ## Lifesum and Apple Health
 
 Lifesum has no public API, but it writes the food you log to **Apple Health** as *Dietary Energy*. The app reads calories from Apple Health, so the Lifesum integration comes for free once Health is connected. Steps, water and workouts come from the same place.
@@ -89,7 +83,7 @@ Both are optional. Everything can be typed in by hand.
 
 ### 1. Supabase
 
-1. In the [SQL editor](https://supabase.com/dashboard/project/vublvpjshnkybdilzcog/sql/new), paste and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), then [`0002_pet.sql`](supabase/migrations/0002_pet.sql), [`0003_pet_style.sql`](supabase/migrations/0003_pet_style.sql) and [`0004_birthday.sql`](supabase/migrations/0004_birthday.sql). If the app ever says the database is missing a column, run [`0005_catch_up.sql`](supabase/migrations/0005_catch_up.sql): it adds anything from 0002–0004 that's missing, refreshes the API's schema cache, and is safe to run any number of times. [`0006_health_lookback.sql`](supabase/migrations/0006_health_lookback.sql) lets the Shortcut send the last few days (each with a `p_date`): steps keep the higher number, today's calories replace what's saved, and earlier days' calories keep the higher number. [`0007_health_replace.sql`](supabase/migrations/0007_health_replace.sql) supersedes that: for today and the 6 days before it, each Shortcut run replaces the steps and calories it sends (so a bad run is fixed by running it again); the partly-covered oldest day of a 7-day window only goes up; zeros are ignored; numbers typed by hand are kept (steps unless Health is higher). [`0008_hardening.sql`](supabase/migrations/0008_hardening.sql) applies two fixes from Supabase's security advisor. [`0009_security.sql`](supabase/migrations/0009_security.sql) tightens table privileges and adds the data-rights functions (new sync token, delete my account). [`0010_health_week.sql`](supabase/migrations/0010_health_week.sql) removes a one-off Shortcut test endpoint. [`0011_workouts_weight_photos.sql`](supabase/migrations/0011_workouts_weight_photos.sql) adds the daily workout total, favourites, body details, weigh-ins and the private `progress-photos` bucket with its policies. [`0012_food.sql`](supabase/migrations/0012_food.sql) adds the food diary (see step 4). [`0013_health_resync.sql`](supabase/migrations/0013_health_resync.sql) makes every day the Shortcut sends replace what's saved (so re-running a fixed Shortcut corrects old days too; numbers typed by hand and the food diary are still kept) and records when the Shortcut last synced, shown in Profile. [`0015_sync_steps.sql`](supabase/migrations/0015_sync_steps.sql) adds `sync_steps`, so the Shortcut can send the whole week in one request without a Repeat loop; it reads dates in any format Shortcuts produces. The migrations create `profiles`, `challenges` and `daily_logs` with row-level security, so each person only sees their own rows. It also creates the `ingest_health` function the Shortcut uses.
+1. In the [SQL editor](https://supabase.com/dashboard/project/vublvpjshnkybdilzcog/sql/new), paste and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), then [`0002_pet.sql`](supabase/migrations/0002_pet.sql), [`0003_pet_style.sql`](supabase/migrations/0003_pet_style.sql) and [`0004_birthday.sql`](supabase/migrations/0004_birthday.sql). If the app ever says the database is missing a column, run [`0005_catch_up.sql`](supabase/migrations/0005_catch_up.sql): it adds anything from 0002–0004 that's missing, refreshes the API's schema cache, and is safe to run any number of times. [`0006_health_lookback.sql`](supabase/migrations/0006_health_lookback.sql) lets the Shortcut send the last few days (each with a `p_date`): steps keep the higher number, today's calories replace what's saved, and earlier days' calories keep the higher number. [`0007_health_replace.sql`](supabase/migrations/0007_health_replace.sql) supersedes that: for today and the 6 days before it, each Shortcut run replaces the steps and calories it sends (so a bad run is fixed by running it again); the partly-covered oldest day of a 7-day window only goes up; zeros are ignored; numbers typed by hand are kept (steps unless Health is higher). [`0008_hardening.sql`](supabase/migrations/0008_hardening.sql) applies two fixes from Supabase's security advisor. [`0009_security.sql`](supabase/migrations/0009_security.sql) tightens table privileges and adds the data-rights functions (new sync token, delete my account). [`0010_health_week.sql`](supabase/migrations/0010_health_week.sql) removes a one-off Shortcut test endpoint. [`0011_workouts_weight_photos.sql`](supabase/migrations/0011_workouts_weight_photos.sql) adds the daily workout total, favourites, body details, weigh-ins and the private `progress-photos` bucket with its policies. [`0012_food.sql`](supabase/migrations/0012_food.sql) adds the food diary (see step 4). [`0013_health_resync.sql`](supabase/migrations/0013_health_resync.sql) makes every day the Shortcut sends replace what's saved (so re-running a fixed Shortcut corrects old days too; numbers typed by hand and the food diary are still kept) and records when the Shortcut last synced, shown in Profile. [`0015_sync_steps.sql`](supabase/migrations/0015_sync_steps.sql) adds `sync_steps`, so the Shortcut can send the whole week in one request without a Repeat loop; it reads dates in any format Shortcuts produces. [`0016_meal_prep.sql`](supabase/migrations/0016_meal_prep.sql) adds meal prep (`meal_preps`) and the meals a saved meal is offered at (`saved_meals.slots`); until it's run the app still works, meal prep just asks for it. The migrations create `profiles`, `challenges` and `daily_logs` with row-level security, so each person only sees their own rows. It also creates the `ingest_health` function the Shortcut uses.
 2. Under **Authentication → URL Configuration**, set the **Site URL** to `https://swag-75.pages.dev` and add `https://swag-75.pages.dev/**` under **Redirect URLs**, so confirmation and password-reset emails link back to the app (Supabase ignores the app's own link unless it's on that list). Opening a reset link signs her in and asks for a new password; Profile also has **Change password**.
 3. `.env` already holds the project URL and publishable key. Both are public by design, and row-level security protects the data. Put anything secret in `.env.local`, which git ignores.
 4. **Food diary.** Run [`0012_food.sql`](supabase/migrations/0012_food.sql) (diary, her foods, saved meals, macro targets, the estimate counter) and deploy the server function in [`supabase/functions/food`](supabase/functions/food) as `food` (Edge Functions → Deploy, or `supabase functions deploy food`). Search, barcodes and quick add work with just that.
@@ -125,10 +119,11 @@ In Xcode: pick your team under *Signing & Capabilities*, check **HealthKit** is 
 
 ```
 src/
-  App.tsx                 tab shell (Today · Food · Progress · Pet · Profile)
-  screens/                Auth, Onboarding, Today, Food, Progress, Pet, Profile
+  App.tsx                 tab shell (Today · Food · Progress · Profile)
+  screens/                Auth, Onboarding, Today, Food, Progress, Profile
   components/             rings, toggles, steppers, bottom sheets, icons
-  components/food/        the logging sheet, barcode scanner, targets
+  components/food/        the logging sheet, barcode scanner, targets, meal icons,
+                          one-tap suggestions, meal prep
   data/AppData.tsx        app state, optimistic saves (only changed fields are written)
   data/FoodData.tsx       the food diary, her foods and saved meals
   data/repo.ts            Supabase backend + on-device fallback
@@ -137,6 +132,9 @@ src/
   lib/off.ts              Open Food Facts lookups
   lib/barcode.ts          barcode reading (native detector or zxing)
   lib/energy.ts           resting + workouts + steps = burned; net calories
+  lib/usual.ts            "your usual", same as yesterday, go-to snacks (from her diary)
+  lib/mealPrep.ts         meal-prep batches: portions, ½ / 1 / 1½, what's left
+  lib/weeks.ts            challenge weeks 1–11 for the Progress week-by-week view
   lib/challenge.ts        75 Hard rules: day numbers, task checks, full and partly done days
   lib/activities.ts       workout library + calorie estimates
   lib/body.ts             weight units, 7-day average, body details for estimates

@@ -97,6 +97,22 @@ export interface SavedMeal {
   items: Omit<FoodEntry, 'id' | 'log_date' | 'meal' | 'created_at'>[];
   uses: number;
   last_used: string | null;
+  /** The meals it's offered at as a one-tap suggestion (empty or missing: only under Saved meals). */
+  slots?: Meal[] | null;
+}
+
+/** A batch she cooked (meal prep): what went in, split into equal portions that count down as she eats them. */
+export interface MealPrep {
+  id: string;
+  name: string;
+  items: SavedMeal['items'];
+  /** How many portions the batch was split into. */
+  portions: number;
+  /** Portions not eaten yet (can be a half). */
+  portions_left: number;
+  /** The day it was made, yyyy-MM-dd. */
+  made_on: string;
+  created_at?: string;
 }
 
 /** What the photo / description estimate sends back for each item. */

@@ -16,7 +16,9 @@ import { EnergyCard, EnergySheet } from '../components/Energy';
 import { dayEnergy, defaultActiveGoal } from '../lib/energy';
 import { useFood } from '../data/FoodData';
 import type { FoodEntry, Meal } from '../data/foodTypes';
-import { mealForTime, totals } from '../lib/nutrition';
+import { mealForTime, mealLabel, mealsWithFood, totals } from '../lib/nutrition';
+import { copyEntries, yourUsual } from '../lib/usual';
+import { addDays as addIsoDays } from '../lib/weeks';
 import { FoodLogger } from '../components/food/FoodLogger';
 import { TodayFood } from '../components/food/TodayFood';
 import { useMinuteTick } from '../lib/useMinuteTick';
@@ -178,6 +180,25 @@ export function TodayScreen({
       ? { kcal: log.calories, from: log.calories_source === 'manual' ? 'a number typed in' : 'Lifesum' }
       : null;
   const energy = dayEnergy({ ...log, calories: eaten }, stats, { date, today, now });
+  // Net calories say how much of the day they cover: meals logged in the diary, or where the number came from.
+  const mealsLogged = entries.length ? mealsWithFood(entries) : null;
+
+  // "Your usual" for the meal coming up, while it's still empty: one tap logs it.
+  const nextMeal = isToday ? mealForTime(now) : null;
+  const history: FoodEntry[] = [];
+  for (let i = 1; i <= 14; i++) history.push(...food.entriesFor(addIsoDays(date, -i)));
+  const usual = nextMeal && !entries.some((e) => e.meal === nextMeal) ? yourUsual(history, { date, meal: nextMeal }) : null;
+  const logUsual = async () => {
+    if (!usual || !nextMeal) return;
+    const copies = copyEntries(usual.entries, date, nextMeal);
+    try {
+      await food.add(copies);
+    } catch {
+      return; // already reported
+    }
+    success();
+    setToast({ message: `${mealLabel(nextMeal)} logged · ${fmt(totals(copies).kcal)} kcal`, undo: () => food.remove(copies.map((c) => c.id)) });
+  };
   const activeGoal = profile.active_goal_kcal || defaultActiveGoal(profile, stats);
   const favorites = profile.workout_favorites ?? [];
   const quick: (WorkoutFavorite | RecentWorkout)[] = favorites.length ? favorites : recents.slice(0, 4);
@@ -317,6 +338,8 @@ export function TodayScreen({
           steps={log.steps}
           stepGoal={profile.step_goal}
           weekSteps={stepWeek.total}
+          mealsLogged={mealsLogged}
+          outsideFrom={outside?.from}
           onEaten={openFood}
           onBurned={() => setSheet('burned')}
           onSteps={() => setSheet('steps')}
@@ -407,6 +430,7 @@ export function TodayScreen({
           onOpen={openFood}
           onType={() => setLogger({ meal: mealForTime(), focus: true })}
           onPhoto={(photo) => setLogger({ meal: mealForTime(), photo })}
+          usual={usual && nextMeal ? { meal: nextMeal, title: usual.title, kcal: usual.kcal, onLog: logUsual } : null}
         />
 
         <h2 className="section-label">
@@ -554,6 +578,9 @@ export function TodayScreen({
         log={log}
         body={stats}
         activeGoal={activeGoal}
+        calorieGoal={profile.calorie_goal}
+        mealsLogged={mealsLogged}
+        outsideFrom={outside?.from}
         title={isToday ? 'Calories today' : `Calories · ${format(parseISO(date), 'EEE d MMM')}`}
         onClose={() => setSheet(null)}
         openProfile={openProfile}

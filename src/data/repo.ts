@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { AuthUser, Challenge, DailyLog, Profile } from './types';
 import { normaliseLog } from './types';
-import type { EstimatedItem, FoodEntry, Meal, MyFood, SavedMeal } from './foodTypes';
+import type { EstimatedItem, FoodEntry, Meal, MealPrep, MyFood, SavedMeal } from './foodTypes';
 import { thumbPath } from '../lib/photos';
 
 /**
@@ -61,6 +61,10 @@ export interface Repo {
   getSavedMeals(): Promise<SavedMeal[]>;
   saveSavedMeal(meal: SavedMeal): Promise<void>;
   deleteSavedMeal(id: string): Promise<void>;
+  /** Meal prep: batches she cooked, split into portions. Empty until migration 0016 has been run. */
+  getMealPreps(): Promise<MealPrep[]>;
+  saveMealPrep(prep: MealPrep): Promise<void>;
+  deleteMealPrep(id: string): Promise<void>;
   /** Calories and macros for a photo or a description of a meal (server function). */
   estimateMeal(req: EstimateRequest): Promise<{ items: EstimatedItem[]; note: string }>;
   /** Open Food Facts through the server function, for when the phone's own request is blocked. */
@@ -94,6 +98,7 @@ export interface DataExport {
   food_diary: FoodEntry[];
   my_foods: MyFood[];
   saved_meals: SavedMeal[];
+  meal_preps: MealPrep[];
 }
 
 /** Profile fields the app may change (the database only allows these too; see 0009_security.sql). */
@@ -198,6 +203,15 @@ export function dbError(err: DbError): Error {
     );
   return new Error(err.message);
 }
+
+/** The table isn't there yet (its migration hasn't been run). */
+const missingTable = (err: DbError | null) =>
+  !!err && (err.code === '42P01' || err.code === 'PGRST205' || /could not find the table|relation .* does not exist/i.test(err.message));
+/** A column isn't there yet (its migration hasn't been run, or the API hasn't picked it up). */
+const missingColumn = (err: DbError | null) => !!err && (err.code === '42703' || err.code === 'PGRST204' || /could not find the '\w+' column/i.test(err.message));
+
+const MEAL_PREP_SETUP =
+  'Meal prep isn’t set up in the database yet. In Supabase’s SQL Editor, run supabase/migrations/0016_meal_prep.sql, then try again.';
 
 function check<T>(res: { data: T; error: DbError | null }): T {
   if (res.error) throw dbError(res.error);
@@ -328,6 +342,7 @@ export class SupabaseRepo implements Repo {
       food_diary: (await this.getFoodEntries(...ALL_DATES)).sort((a, b) => a.log_date.localeCompare(b.log_date)),
       my_foods: await this.getMyFoods(),
       saved_meals: await this.getSavedMeals(),
+      meal_preps: await this.getMealPreps(),
     };
   }
 
@@ -456,12 +471,35 @@ export class SupabaseRepo implements Repo {
   }
 
   async saveSavedMeal(m: SavedMeal) {
-    const { id, name, items, uses, last_used } = m;
-    check(await this.sb.from('saved_meals').upsert({ id, user_id: this.uid(), name, items, uses, last_used }, { onConflict: 'id' }));
+    const { id, name, items, uses, last_used, slots } = m;
+    const row = { id, user_id: this.uid(), name, items, uses, last_used };
+    const res = await this.sb.from('saved_meals').upsert({ ...row, slots: slots ?? null }, { onConflict: 'id' });
+    // Before migration 0016 there's no "slots" column: save the meal without it rather than fail.
+    if (missingColumn(res.error)) check(await this.sb.from('saved_meals').upsert(row, { onConflict: 'id' }));
+    else check(res);
   }
 
   async deleteSavedMeal(id: string) {
     check(await this.sb.from('saved_meals').delete().eq('user_id', this.uid()).eq('id', id));
+  }
+
+  async getMealPreps() {
+    const res = await this.sb.from('meal_preps').select('*').eq('user_id', this.uid()).order('created_at', { ascending: false });
+    if (missingTable(res.error)) return []; // migration 0016 not run yet: nothing to show
+    return (check(res) as MealPrep[]).map((p) => ({ ...p, portions: Number(p.portions), portions_left: Number(p.portions_left) }));
+  }
+
+  async saveMealPrep(p: MealPrep) {
+    const { id, name, items, portions, portions_left, made_on } = p;
+    const res = await this.sb.from('meal_preps').upsert({ id, user_id: this.uid(), name, items, portions, portions_left, made_on }, { onConflict: 'id' });
+    if (missingTable(res.error)) throw new Error(MEAL_PREP_SETUP);
+    check(res);
+  }
+
+  async deleteMealPrep(id: string) {
+    const res = await this.sb.from('meal_preps').delete().eq('user_id', this.uid()).eq('id', id);
+    if (missingTable(res.error)) return;
+    check(res);
   }
 
   async estimateMeal(req: EstimateRequest) {
@@ -555,6 +593,7 @@ interface LocalState {
   food?: FoodEntry[];
   myFoods?: MyFood[];
   meals?: SavedMeal[];
+  preps?: MealPrep[];
 }
 
 const defaultProfile = (): Profile => ({
@@ -668,6 +707,7 @@ export class LocalRepo implements Repo {
       food_diary: s.food ?? [],
       my_foods: s.myFoods ?? [],
       saved_meals: s.meals ?? [],
+      meal_preps: s.preps ?? [],
     };
   }
 
@@ -786,6 +826,24 @@ export class LocalRepo implements Repo {
 
   async deleteSavedMeal(id: string) {
     this.mutate((s) => (s.meals = (s.meals ?? []).filter((m) => m.id !== id)));
+  }
+
+  async getMealPreps() {
+    return [...(this.load().preps ?? [])].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+  }
+
+  async saveMealPrep(p: MealPrep) {
+    this.mutate((s) => {
+      const list = s.preps ?? [];
+      const i = list.findIndex((x) => x.id === p.id);
+      if (i >= 0) list[i] = { ...list[i], ...p };
+      else list.push({ ...p, created_at: p.created_at ?? new Date().toISOString() });
+      s.preps = list;
+    });
+  }
+
+  async deleteMealPrep(id: string) {
+    this.mutate((s) => (s.preps = (s.preps ?? []).filter((p) => p.id !== id)));
   }
 
   async estimateMeal(): Promise<{ items: EstimatedItem[]; note: string }> {

@@ -12,10 +12,19 @@ import { tap } from '../lib/haptics';
 const k = (n: number) => (n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k` : String(n));
 const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${fmt(Math.abs(Math.round(n)))}`;
 
+/** "2 of 4 meals logged", or where the calories came from when they weren't logged here. */
+function loggedText(mealsLogged: number | null, outsideFrom: string | null | undefined) {
+  return mealsLogged !== null ? `${mealsLogged} of 4 meals logged` : `from ${outsideFrom ?? 'Lifesum'}`;
+}
+
 /**
  * Eaten · Burned · Steps as three rings, with net calories underneath.
- * Burned shows active calories in the ring (workouts + everyday steps) and the total
- * (resting + active) under it; net is eaten minus the total.
+ *  - Under Eaten: calories left (target − eaten). Workouts don't add calories back: her target
+ *    already holds her deficit.
+ *  - Burned is active calories only (workouts + everyday steps), filling up through the day;
+ *    resting burn is in the breakdown.
+ *  - Net (eaten − everything burned) only shows once she's logged food, with how many meals
+ *    that covers, because a day with nothing logged isn't a deficit.
  */
 export function EnergyCard({
   energy,
@@ -25,6 +34,8 @@ export function EnergyCard({
   steps,
   stepGoal,
   weekSteps,
+  mealsLogged,
+  outsideFrom,
   onEaten,
   onBurned,
   onSteps,
@@ -36,12 +47,16 @@ export function EnergyCard({
   steps: number | null;
   stepGoal: number;
   weekSteps: number;
+  /** Meals with something logged in the diary; null when the calories came from elsewhere. */
+  mealsLogged: number | null;
+  /** Where the calories came from when they weren't logged in the diary ("Lifesum"). */
+  outsideFrom?: string | null;
   onEaten: () => void;
   onBurned: () => void;
   onSteps: () => void;
 }) {
   const left = calorieGoal && eaten !== null ? calorieGoal - eaten : null;
-  const net = eaten === null ? null : eaten - energy.total;
+  const net = eaten !== null && eaten > 0 ? eaten - energy.total : null;
   return (
     <section className="card energy" aria-label="Calories and steps">
       <div className="energy-rings">
@@ -64,8 +79,8 @@ export function EnergyCard({
           value={fmt(energy.active)}
           unit="active"
           pct={activeGoal ? energy.active / activeGoal : 0}
-          sub={`${fmt(energy.total)} total`}
-          aria={`Burned ${fmt(energy.total)} calories${energy.partial ? ' so far' : ''}, ${fmt(energy.active)} of them active. See the breakdown`}
+          sub={`of ${fmt(activeGoal)} goal`}
+          aria={`Burned ${fmt(energy.active)} active calories${energy.partial ? ' so far' : ''}, of a ${fmt(activeGoal)} goal. See the breakdown`}
           onClick={onBurned}
         />
         <RingButton
@@ -80,10 +95,15 @@ export function EnergyCard({
           onClick={onSteps}
         />
       </div>
-      <button type="button" className="net-row" onClick={() => (tap(), onBurned())} aria-label={net === null ? 'Net calories: log food to see them' : `Net calories ${signed(net)}. See the breakdown`}>
+      <button
+        type="button"
+        className="net-row"
+        onClick={() => (tap(), onBurned())}
+        aria-label={net === null ? 'Net calories show once you’ve logged food. See the breakdown' : `Net calories ${signed(net)}${energy.partial ? ' so far' : ''}, ${loggedText(mealsLogged, outsideFrom)}. See the breakdown`}
+      >
         <span className="net-text">
-          <span className="net-label">Net calories</span>
-          <span className="net-sub">{eaten === null ? 'Log food to see it' : `${fmt(eaten)} eaten − ${fmt(energy.total)} burned`}</span>
+          <span className="net-label">{net !== null && energy.partial ? 'Net so far' : 'Net calories'}</span>
+          <span className="net-sub">{net === null ? 'Shows once you’ve logged food' : loggedText(mealsLogged, outsideFrom)}</span>
         </span>
         {net !== null && (
           <span className="net-value">
@@ -160,6 +180,9 @@ export function EnergySheet({
   log,
   body,
   activeGoal,
+  calorieGoal,
+  mealsLogged,
+  outsideFrom,
   title,
   onClose,
   openProfile,
@@ -170,6 +193,9 @@ export function EnergySheet({
   log: DailyLog;
   body: BodyStats;
   activeGoal: number;
+  calorieGoal: number | null;
+  mealsLogged: number | null;
+  outsideFrom?: string | null;
   title: string;
   onClose: () => void;
   openProfile: () => void;
@@ -177,7 +203,7 @@ export function EnergySheet({
 }) {
   const workouts = log.workouts.map((w) => ({ w, kcal: entryKcal(w, body) }));
   const missing = bodyStatsMissing(body);
-  const net = energy.eaten === null ? null : energy.eaten - energy.total;
+  const net = energy.eaten !== null && energy.eaten > 0 ? energy.eaten - energy.total : null;
   const parts = [
     { key: 'rest', label: 'Resting', value: energy.resting, cls: 'seg-rest' },
     { key: 'work', label: 'Workouts', value: energy.workouts, cls: 'seg-work' },
@@ -189,7 +215,7 @@ export function EnergySheet({
       <div className="en-top">
         <div>
           <span>Eaten</span>
-          <strong>{energy.eaten === null ? '–' : fmt(energy.eaten)}</strong>
+          <strong>{net === null ? '–' : fmt(energy.eaten ?? 0)}</strong>
         </div>
         <span className="en-op" aria-hidden="true">
           −
@@ -206,12 +232,16 @@ export function EnergySheet({
           <strong>{net === null ? '–' : signed(net)}</strong>
         </div>
       </div>
-      {net !== null && (
-        <p className="card-sub" style={{ margin: '-6px 0 0', textAlign: 'center' }}>
-          {net <= 0 ? `${fmt(-net)} kcal under what you’ve burned` : `${fmt(net)} kcal over what you’ve burned`}
-          {energy.partial ? ' so far today' : ''}.
+      <p className="card-sub" style={{ margin: '-6px 0 0', textAlign: 'center' }}>
+        {net === null
+          ? 'Net calories show once you’ve logged food.'
+          : `${net <= 0 ? `${fmt(-net)} kcal under what you’ve burned` : `${fmt(net)} kcal over what you’ve burned`}${energy.partial ? ' so far today' : ''} · ${loggedText(mealsLogged, outsideFrom)}.`}
+      </p>
+      {calorieGoal ? (
+        <p className="en-note">
+          Your {fmt(calorieGoal)} kcal target already includes your deficit, so workouts don’t add calories back to what’s left to eat.
         </p>
-      )}
+      ) : null}
 
       <div className="en-block">
         <div className="en-bar" aria-hidden="true">
@@ -271,7 +301,7 @@ export function EnergySheet({
         </p>
         <p>
           <strong>Workouts</strong> use measured energy costs from the Compendium of Physical Activities, the research table most fitness apps use: light, normal
-          or hard picks the level, multiplied by the minutes and your weight, minus what you’d have burned resting anyway.
+          or hard picks the level, measured against your own resting rate and multiplied by the minutes, minus what you’d have burned resting anyway.
         </p>
         <p>
           <strong>Steps</strong> count as everyday walking. Steps taken during a logged walk or run are already in that workout, so they’re taken off first.

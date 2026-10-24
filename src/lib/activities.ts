@@ -13,10 +13,13 @@ import type { Intensity } from '../data/types';
  * number that belongs next to "calories eaten", because her resting burn is already part of any
  * daily calorie target.
  *
- *   gross kcal/min = MET × 3.5 ml/kg/min × weight(kg) / 200
  *   resting kcal/min = her resting metabolic rate (Mifflin-St Jeor, from weight, height, age, sex)
- *                      ÷ 1440, or 1 MET if we don't know enough about her yet
- *   active kcal = (gross − resting) × minutes
+ *                      ÷ 1440, or the textbook 1 MET (3.5 ml/kg/min) if we don't know enough yet
+ *   active kcal = (MET − 1) × resting kcal/min × minutes
+ *
+ * A MET is a multiple of HER resting rate. The textbook 1 MET assumes a faster resting rate
+ * than Mifflin-St Jeor gives most women (about 20% faster for a 65 kg woman), so measuring the
+ * workout with one and subtracting the other overstated workouts by about a quarter.
  */
 
 export type CategoryId =
@@ -252,10 +255,9 @@ export function restingKcalPerDay(b: BodyStats): number | null {
 /** Active calories for a session, rounded to the nearest whole kcal. */
 export function activeKcal(met: number, minutes: number, b: BodyStats): number {
   const kg = b.weightKg || FALLBACK_WEIGHT_KG;
-  const grossPerMin = (met * 3.5 * kg) / 200;
   const rmr = restingKcalPerDay({ ...b, weightKg: kg });
   const restPerMin = rmr ? rmr / 1440 : (3.5 * kg) / 200;
-  return Math.max(0, Math.round((grossPerMin - restPerMin) * Math.max(0, minutes)));
+  return Math.max(0, Math.round((met - 1) * restPerMin * Math.max(0, minutes)));
 }
 
 export function estimateKcal(activityId: string, intensity: Intensity, minutes: number, b: BodyStats): number {

@@ -2,16 +2,21 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { addDays, parseISO } from 'date-fns';
 import { useApp } from './AppData';
 import type { EstimateRequest } from './repo';
-import type { EstimatedItem, Food, FoodEntry, Meal, MyFood, SavedMeal } from './foodTypes';
+import type { EstimatedItem, Food, FoodEntry, Meal, MealPrep, MyFood, SavedMeal } from './foodTypes';
 import { toISODate } from '../lib/challenge';
 import { newId, quickEntry, totals } from '../lib/nutrition';
 import type { OffProxy } from '../lib/off';
+import { portionEntry, prepIdOf, withPortionsLeft } from '../lib/mealPrep';
 
 /**
  * The food diary: what she ate (by day), her food library (favourites, her own foods,
  * everything she's logged before) and saved meals. Every change is shown at once and saved
  * in the background; the day's calories in daily_logs follow the diary, so Today, the rings
  * and the weekly recap all see the same number.
+ *
+ * Meal prep: batches she cooked, split into portions. A portion in the diary points back at its
+ * batch (food key "prep:<id>"), and the batch counts down however the portion got there or left:
+ * logged, copied, changed, deleted or undone.
  */
 
 interface FoodState {
@@ -30,9 +35,18 @@ interface FoodState {
   toggleFavorite(food: Food): Promise<void>;
   saveCustomFood(food: Food): Promise<void>;
   forgetFood(id: string): Promise<void>;
-  saveMeal(name: string, entries: FoodEntry[]): Promise<void>;
+  /** `slots`: the meals to offer it at as a one-tap suggestion. */
+  saveMeal(name: string, entries: FoodEntry[], slots?: Meal[]): Promise<void>;
   logMeal(meal: SavedMeal, date: string, slot: Meal): Promise<FoodEntry[]>;
   deleteMeal(id: string): Promise<void>;
+  mealPreps: MealPrep[];
+  /** Save a new batch; with `logNow`, one portion goes straight into the diary (returned for undo). */
+  addMealPrep(prep: MealPrep, logNow?: { date: string; meal: Meal } | null): Promise<FoodEntry[]>;
+  /** Log `size` portions of a batch (½, 1, 1½…); returns the diary entry, for undo. */
+  logPrep(prep: MealPrep, size: number, date: string, meal: Meal): Promise<FoodEntry[]>;
+  /** Removes a batch and returns it (for undo). Portions already in the diary stay there. */
+  deleteMealPrep(id: string): Promise<MealPrep | null>;
+  restoreMealPrep(prep: MealPrep): Promise<void>;
   estimate(req: EstimateRequest): Promise<{ items: EstimatedItem[]; note: string }>;
   /** Photo / description estimates are available (null until known; assume yes). */
   ai: boolean | null;
@@ -60,6 +74,9 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
   const [byDate, setByDate] = useState<Record<string, FoodEntry[]>>({});
   const [myFoods, setMyFoods] = useState<MyFood[]>([]);
   const [savedMeals, setSavedMeals] = useState<SavedMeal[]>([]);
+  const [mealPreps, setMealPreps] = useState<MealPrep[]>([]);
+  const mealPrepsRef = useRef(mealPreps);
+  mealPrepsRef.current = mealPreps;
   const [ready, setReady] = useState(false);
   const [ai, setAi] = useState<boolean | null>(null);
   const loaded = useRef(new Set<string>());
@@ -74,6 +91,7 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
     setByDate({});
     setMyFoods([]);
     setSavedMeals([]);
+    setMealPreps([]);
     setReady(false);
     setAi(null);
   }, [user?.id]);
@@ -117,10 +135,17 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
     let live = true;
     (async () => {
       try {
-        const [foods, meals] = await Promise.all([repo.getMyFoods(), repo.getSavedMeals(), ensure(toISODate(addDays(parseISO(today), -13)), today)]);
+        const [foods, meals, preps] = await Promise.all([
+          repo.getMyFoods(),
+          repo.getSavedMeals(),
+          repo.getMealPreps(),
+          ensure(toISODate(addDays(parseISO(today), -13)), today),
+        ]);
         if (!live) return;
         setMyFoods(foods);
         setSavedMeals(meals);
+        mealPrepsRef.current = preps;
+        setMealPreps(preps);
       } catch (e) {
         reportError(e);
       } finally {
@@ -154,7 +179,7 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
       const changed: MyFood[] = [];
       const list = [...myFoodsRef.current];
       for (const e of entries) {
-        if (!e.food) continue;
+        if (!e.food || prepIdOf(e)) continue; // meal-prep portions don't belong in Recent
         const i = list.findIndex((f) => f.key === e.food!.key);
         const prev = i >= 0 ? list[i] : null;
         const next: MyFood = {
@@ -181,6 +206,34 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
     [repo],
   );
 
+  /**
+   * Count meal-prep portions down (sign 1) or back up (sign −1) for these diary entries, and
+   * save the batches that changed. Entries that aren't portions are ignored.
+   */
+  const shiftPreps = useCallback(
+    (entries: Pick<FoodEntry, 'food_key' | 'amount'>[], sign: 1 | -1) => {
+      const deltas = new Map<string, number>();
+      for (const e of entries) {
+        const id = prepIdOf(e);
+        if (id) deltas.set(id, (deltas.get(id) ?? 0) + sign * e.amount);
+      }
+      if (!deltas.size) return;
+      const changed: MealPrep[] = [];
+      const next = mealPrepsRef.current.map((p) => {
+        const d = deltas.get(p.id);
+        if (!d) return p;
+        const q = withPortionsLeft(p, d);
+        if (q.portions_left !== p.portions_left) changed.push(q);
+        return q;
+      });
+      if (!changed.length) return;
+      mealPrepsRef.current = next;
+      setMealPreps(next);
+      for (const p of changed) repo.saveMealPrep(p).catch(reportError);
+    },
+    [repo, reportError],
+  );
+
   const add = useCallback(
     async (entries: FoodEntry[]) => {
       if (!entries.length) return;
@@ -204,17 +257,19 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
       setByDate(next);
       for (const d of dates) syncDay(d, next[d]);
       remember(entries);
+      shiftPreps(entries, 1);
       try {
         await repo.saveFoodEntries(all);
       } catch (e) {
         byDateRef.current = before;
         setByDate(before);
         for (const d of dates) syncDay(d, before[d] ?? []);
+        shiftPreps(entries, -1);
         reportError(e);
         throw e;
       }
     },
-    [repo, logsRef, syncDay, remember, reportError],
+    [repo, logsRef, syncDay, remember, shiftPreps, reportError],
   );
 
   const update = useCallback(
@@ -230,15 +285,18 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
       syncDay(entry.log_date, next[entry.log_date]);
       if (old && old.log_date !== entry.log_date) syncDay(old.log_date, next[old.log_date]);
       if (entry.food && old?.food && (old.amount !== entry.amount || old.unit !== entry.unit)) remember([entry]);
+      // ½ → 1 portion of a meal prep: the batch follows
+      if (old && prepIdOf(old) && prepIdOf(old) === prepIdOf(entry)) shiftPreps([{ food_key: entry.food_key, amount: entry.amount - old.amount }], 1);
       try {
         await repo.saveFoodEntries([entry]);
       } catch (e) {
         byDateRef.current = before;
         setByDate(before);
+        if (old && prepIdOf(old) && prepIdOf(old) === prepIdOf(entry)) shiftPreps([{ food_key: entry.food_key, amount: entry.amount - old.amount }], -1);
         reportError(e);
       }
     },
-    [repo, syncDay, remember, reportError],
+    [repo, syncDay, remember, shiftPreps, reportError],
   );
 
   const remove = useCallback(
@@ -252,22 +310,26 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
       byDateRef.current = next;
       setByDate(next);
       for (const d of dates) syncDay(d, next[d]);
+      shiftPreps(removed, -1); // a deleted portion goes back into its batch
       try {
         await repo.deleteFoodEntries(ids);
       } catch (e) {
         byDateRef.current = before;
         setByDate(before);
         for (const d of dates) syncDay(d, before[d]);
+        shiftPreps(removed, 1);
         reportError(e);
       }
       return removed;
     },
-    [repo, syncDay, reportError],
+    [repo, syncDay, shiftPreps, reportError],
   );
 
   const restore = useCallback(
     async (entries: FoodEntry[]) => {
       const next = { ...byDateRef.current };
+      const back = entries.filter((e) => !(next[e.log_date] ?? []).some((x) => x.id === e.id));
+      shiftPreps(back, 1);
       for (const e of entries) if (!(next[e.log_date] ?? []).some((x) => x.id === e.id)) next[e.log_date] = [...(next[e.log_date] ?? []), e];
       for (const d of Object.keys(next)) next[d] = [...next[d]].sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
       byDateRef.current = next;
@@ -279,7 +341,7 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
         reportError(e);
       }
     },
-    [repo, syncDay, reportError],
+    [repo, syncDay, shiftPreps, reportError],
   );
 
   const upsertMyFood = useCallback(
@@ -347,8 +409,15 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
   );
 
   const saveMeal = useCallback(
-    async (name: string, entries: FoodEntry[]) => {
-      const meal: SavedMeal = { id: newId(), name: name.trim().slice(0, 60), items: entries.map(stripEntryForMeal), uses: 0, last_used: new Date().toISOString() };
+    async (name: string, entries: FoodEntry[], slots?: Meal[]) => {
+      const meal: SavedMeal = {
+        id: newId(),
+        name: name.trim().slice(0, 60),
+        items: entries.map(stripEntryForMeal),
+        uses: 0,
+        last_used: new Date().toISOString(),
+        slots: slots?.length ? slots : null,
+      };
       setSavedMeals((l) => [meal, ...l]);
       try {
         await repo.saveSavedMeal(meal);
@@ -384,6 +453,68 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
     [repo, reportError],
   );
 
+  const addMealPrep = useCallback(
+    async (prep: MealPrep, logNow?: { date: string; meal: Meal } | null) => {
+      mealPrepsRef.current = [prep, ...mealPrepsRef.current];
+      setMealPreps(mealPrepsRef.current);
+      try {
+        await repo.saveMealPrep(prep);
+      } catch (e) {
+        mealPrepsRef.current = mealPrepsRef.current.filter((p) => p.id !== prep.id);
+        setMealPreps(mealPrepsRef.current);
+        reportError(e);
+        throw e;
+      }
+      if (!logNow) return [];
+      const entries = [portionEntry(prep, 1, logNow.meal, logNow.date)];
+      await add(entries); // counts the batch down
+      return entries;
+    },
+    [repo, add, reportError],
+  );
+
+  const logPrep = useCallback(
+    async (prep: MealPrep, size: number, date: string, slot: Meal) => {
+      const entries = [portionEntry(prep, size, slot, date)];
+      await add(entries); // counts the batch down
+      return entries;
+    },
+    [add],
+  );
+
+  const deleteMealPrep = useCallback(
+    async (id: string) => {
+      const prep = mealPrepsRef.current.find((p) => p.id === id) ?? null;
+      if (!prep) return null;
+      mealPrepsRef.current = mealPrepsRef.current.filter((p) => p.id !== id);
+      setMealPreps(mealPrepsRef.current);
+      try {
+        await repo.deleteMealPrep(id);
+      } catch (e) {
+        mealPrepsRef.current = [prep, ...mealPrepsRef.current];
+        setMealPreps(mealPrepsRef.current);
+        reportError(e);
+        return null;
+      }
+      return prep;
+    },
+    [repo, reportError],
+  );
+
+  const restoreMealPrep = useCallback(
+    async (prep: MealPrep) => {
+      if (mealPrepsRef.current.some((p) => p.id === prep.id)) return;
+      mealPrepsRef.current = [prep, ...mealPrepsRef.current].sort((a, b) => (b.created_at ?? b.made_on).localeCompare(a.created_at ?? a.made_on));
+      setMealPreps(mealPrepsRef.current);
+      try {
+        await repo.saveMealPrep(prep);
+      } catch (e) {
+        reportError(e);
+      }
+    },
+    [repo, reportError],
+  );
+
   const offProxy = useCallback<OffProxy>((action, params) => repo.offProxy(action, params), [repo]);
   const estimate = useCallback((req: EstimateRequest) => repo.estimateMeal(req), [repo]);
   const entriesFor = useCallback((date: string) => byDate[date] ?? [], [byDate]);
@@ -407,11 +538,19 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
       saveMeal,
       logMeal,
       deleteMeal,
+      mealPreps,
+      addMealPrep,
+      logPrep,
+      deleteMealPrep,
+      restoreMealPrep,
       estimate,
       ai,
       offProxy,
     }),
-    [ready, entriesFor, isLoaded, ensure, myFoods, savedMeals, add, update, remove, restore, toggleFavorite, saveCustomFood, forgetFood, saveMeal, logMeal, deleteMeal, estimate, ai, offProxy],
+    [
+      ready, entriesFor, isLoaded, ensure, myFoods, savedMeals, add, update, remove, restore, toggleFavorite, saveCustomFood, forgetFood,
+      saveMeal, logMeal, deleteMeal, mealPreps, addMealPrep, logPrep, deleteMealPrep, restoreMealPrep, estimate, ai, offProxy,
+    ],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

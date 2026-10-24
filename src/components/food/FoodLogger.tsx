@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { EstimatedItem, Food, FoodEntry, Meal, MyFood, SavedMeal } from '../../data/foodTypes';
+import type { EstimatedItem, Food, FoodEntry, Meal, MealPrep, MyFood, SavedMeal } from '../../data/foodTypes';
 import { MEALS } from '../../data/foodTypes';
 import { useFood } from '../../data/FoodData';
 import { useApp } from '../../data/AppData';
@@ -27,6 +27,11 @@ import { Sheet, fmt } from '../ui';
 import { IconCamera, IconCheck, IconMinus, IconPlus, IconSearch, IconStar, IconX } from '../Icons';
 import { BarcodeScanner } from './BarcodeScanner';
 import { FoodThumb, MacroLine, g1 } from './bits';
+import { MealIcon, PrepIcon } from './MealIcon';
+import { PortionPicker } from './QuickLog';
+import { copyEntries, yourUsual, type Suggestion } from '../../lib/usual';
+import { canLog, leftLabel, portionNutrition } from '../../lib/mealPrep';
+import { addDays as addIsoDays } from '../../lib/weeks';
 
 export type LoggerMode = 'search' | 'scan' | 'describe' | 'quick';
 
@@ -56,6 +61,10 @@ const STARTERS = ['basic:banana', 'basic:egg', 'basic:oats', 'basic:greek_0', 'b
  *  - a photo of the plate is logged the same way; both can be adjusted afterwards
  *  - the "+" on any recent, favourite or search result logs it straight away (last amount used)
  *  - the sheet stays open so several things can go in one after another
+ *  - her usual for the meal and her meal-prep portions sit at the top, one tap each
+ *
+ * With `collect`, it gathers ingredients for a meal prep instead: everything she picks is handed
+ * back to the caller and nothing goes in the diary.
  */
 export function FoodLogger({
   open,
@@ -67,6 +76,7 @@ export function FoodLogger({
   focus,
   onClose,
   onDeleted,
+  collect,
 }: {
   open: boolean;
   date: string;
@@ -80,6 +90,8 @@ export function FoodLogger({
   onClose: () => void;
   /** After an entry is deleted from the edit view (for an undo toast). */
   onDeleted?: (removed: FoodEntry[]) => void;
+  /** Collecting meal-prep ingredients: picked foods come back here instead of going in the diary. */
+  collect?: (entries: FoodEntry[]) => void;
 }) {
   const food = useFood();
   const { reportError } = useApp();
@@ -91,6 +103,8 @@ export function FoodLogger({
   const [scanning, setScanning] = useState(false);
   /** What's been logged in this visit, batch by batch (ids), for the footer and Undo. */
   const [batches, setBatches] = useState<string[][]>([]);
+  /** Collect mode: what's been handed back so far (for the footer and the ✓ on foods). */
+  const [collected, setCollected] = useState<{ n: number; kcal: number; keys: string[] }>({ n: 0, kcal: 0, keys: [] });
   const sessionIds = new Set(batches.flat());
   const added = food.entriesFor(date).filter((e) => sessionIds.has(e.id));
   const [flash, setFlash] = useState<string | null>(null);
@@ -105,6 +119,7 @@ export function FoodLogger({
     setMeal(edit?.meal ?? initialMeal);
     setQuery('');
     setBatches([]);
+    setCollected({ n: 0, kcal: 0, keys: [] });
     setFlash(null);
     setNotice(null);
     if (edit) {
@@ -127,6 +142,14 @@ export function FoodLogger({
 
   /** Log straight away, stay in the sheet. */
   async function logNow(entries: FoodEntry[], label: string): Promise<boolean> {
+    if (collect) {
+      collect(entries);
+      success();
+      setCollected((c) => ({ n: c.n + entries.length, kcal: c.kcal + totals(entries).kcal, keys: [...c.keys, ...entries.map((e) => e.food_key ?? '')] }));
+      setFlash(label);
+      setTimeout(() => setFlash((f) => (f === label ? null : f)), 1600);
+      return true;
+    }
     try {
       await food.add(entries);
       success();
@@ -144,7 +167,8 @@ export function FoodLogger({
     const items: Logged[] = res.items.map((item) => ({ item, entry: estimateEntry(item, 1, meal, date, source), scale: 1, on: true }));
     const entries = items.map((i) => i.entry);
     const ok = await logNow(entries, `${entries.length === 1 ? entries[0].name : `${entries.length} items`} · ${fmt(totals(entries).kcal)} kcal`);
-    if (ok) go({ name: 'logged', items, source, note: res.note, ...extra });
+    if (ok && collect) go({ name: 'home' }); // ingredients: no diary entries to adjust afterwards
+    else if (ok) go({ name: 'logged', items, source, note: res.note, ...extra });
     else go({ name: 'home' });
   }
 
@@ -244,8 +268,24 @@ export function FoodLogger({
     for (const x of items) if (x.on) await food.update(x.entry);
   }
 
-  const sessionKcal = totals(added).kcal;
-  const title =
+  // Her usual for this meal (while it's empty) and her meal prep, at the top of the list.
+  const history: FoodEntry[] = [];
+  if (!collect) for (let i = 1; i <= 14; i++) history.push(...food.entriesFor(addIsoDays(date, -i)));
+  const mealEmpty = !food.entriesFor(date).some((e) => e.meal === meal);
+  const usual = !collect && mealEmpty ? yourUsual(history, { date, meal }) : null;
+  const preps = collect ? [] : food.mealPreps.filter((p) => p.portions_left > 0);
+  async function logPrep(prep: MealPrep, size: number) {
+    tap();
+    const entries = await food.logPrep(prep, size, date, meal).catch(() => null);
+    if (!entries) return;
+    success();
+    setBatches((b) => [...b, entries.map((e) => e.id)]);
+    setFlash(`${prep.name} · ${fmt(totals(entries).kcal)} kcal`);
+  }
+
+  const sessionKcal = collect ? collected.kcal : totals(added).kcal;
+  const sessionCount = collect ? collected.n : added.length;
+  const title = collect && screen.name === 'home' ? 'Add ingredients' :
     screen.name === 'detail' && screen.editing
       ? 'Edit'
       : screen.name === 'quick'
@@ -269,7 +309,7 @@ export function FoodLogger({
       >
         <div ref={top} style={{ height: 0, marginTop: -16 }} aria-hidden="true" />
 
-        {screen.name === 'home' && (
+        {screen.name === 'home' && !collect && (
           <div className="segmented meal-pick" role="group" aria-label="Meal">
             {MEALS.map((m) => (
               <button key={m.id} type="button" aria-pressed={meal === m.id} onClick={() => (tap(), setMeal(m.id))}>
@@ -291,8 +331,13 @@ export function FoodLogger({
             setQuery={setQuery}
             meal={meal}
             myFoods={food.myFoods}
-            savedMeals={food.savedMeals}
-            addedKeys={new Set(added.map((a) => a.food_key ?? ''))}
+            savedMeals={collect ? [] : food.savedMeals}
+            addedKeys={new Set(collect ? collected.keys : added.map((a) => a.food_key ?? ''))}
+            collecting={!!collect}
+            usual={usual}
+            onUsual={() => usual && logNow(copyEntries(usual.entries, date, meal), `${usual.title} · ${fmt(usual.kcal)} kcal`)}
+            preps={preps}
+            onPrep={logPrep}
             onOpen={openFood}
             onQuick={quickLog}
             onScan={() => (tap(), setScanning(true))}
@@ -416,7 +461,7 @@ export function FoodLogger({
           />
         )}
 
-        {(added.length > 0 || flash) && !(screen.name === 'detail' && screen.editing) && (
+        {(sessionCount > 0 || flash) && !(screen.name === 'detail' && screen.editing) && (
           <div className="logger-foot" role="status">
             <span className="logger-foot-text">
               {flash ? (
@@ -425,11 +470,11 @@ export function FoodLogger({
                 </>
               ) : (
                 <>
-                  {added.length} added · {fmt(sessionKcal)} kcal
+                  {sessionCount} added{collect ? ' to the batch' : ''} · {fmt(sessionKcal)} kcal
                 </>
               )}
             </span>
-            {batches.length > 0 && (
+            {batches.length > 0 && !collect && (
               <button
                 type="button"
                 className="link-btn"
@@ -488,6 +533,11 @@ function Home({
   ai,
   focus,
   offProxy,
+  collecting,
+  usual,
+  onUsual,
+  preps,
+  onPrep,
 }: {
   query: string;
   setQuery: (q: string) => void;
@@ -507,6 +557,12 @@ function Home({
   ai: boolean;
   focus?: boolean;
   offProxy: Parameters<typeof searchProducts>[1];
+  /** Picking meal-prep ingredients rather than logging. */
+  collecting?: boolean;
+  usual: Suggestion | null;
+  onUsual: () => void;
+  preps: MealPrep[];
+  onPrep: (prep: MealPrep, size: number) => void;
 }) {
   const q = query.trim();
   const [products, setProducts] = useState<{ q: string; foods: Food[]; error?: boolean } | null>(null);
@@ -591,7 +647,7 @@ function Home({
           </span>
           <span className="row-text">
             <span className="row-title">Log “{q.length > 48 ? q.slice(0, 47) + '…' : q}”</span>
-            <span className="row-sub">Works out the calories and macros, then adds it to {mealLabel(meal).toLowerCase()}</span>
+            <span className="row-sub">Works out the calories and macros, then adds it to {collecting ? 'the batch' : mealLabel(meal).toLowerCase()}</span>
           </span>
         </button>
       )}
@@ -626,6 +682,29 @@ function Home({
       )}
       {!q && ai && <p className="ai-tip">Type what you ate, like “avocado toast and a latte”, or tap the 🎤 on your keyboard and say it.</p>}
 
+      {!q && usual && (
+        <Group label={`Your usual for ${mealLabel(meal).toLowerCase()}`}>
+          <div className="food-line">
+            <MealIcon meal={meal} size={40} />
+            <button type="button" className="food-line-main" onClick={onUsual}>
+              <span className="row-title">{usual.title}</span>
+              <span className="row-sub">
+                {fmt(usual.kcal)} kcal · {usual.why}
+              </span>
+            </button>
+            <button type="button" className="add-btn" aria-label={`Log your usual: ${usual.title}, ${fmt(usual.kcal)} kcal`} onClick={onUsual}>
+              <IconPlus size={20} strokeWidth={2.6} />
+            </button>
+          </div>
+        </Group>
+      )}
+      {!q && preps.length > 0 && (
+        <Group label="Your meal prep">
+          {preps.map((p) => (
+            <PrepLine key={p.id} prep={p} onLog={onPrep} />
+          ))}
+        </Group>
+      )}
       {!q && favorites.length > 0 && (
         <Group label="Favourites">
           {favorites.map((m) => (
@@ -635,7 +714,9 @@ function Home({
       )}
       {!q && savedMeals.length > 0 && (
         <Group label="Saved meals">
-          {savedMeals.map((m) => {
+          {[...savedMeals]
+            .sort((a, b) => Number(!!b.slots?.includes(meal)) - Number(!!a.slots?.includes(meal)))
+            .map((m) => {
             const t = totals(m.items as FoodEntry[]);
             return (
               <div key={m.id} className="food-line">
@@ -645,7 +726,7 @@ function Home({
                 <button type="button" className="food-line-main" onClick={() => onMeal(m)}>
                   <span className="row-title">{m.name}</span>
                   <span className="row-sub">
-                    {m.items.length} items · {fmt(t.kcal)} kcal
+                    {m.items.length === 1 ? '1 item' : `${m.items.length} items`} · {fmt(t.kcal)} kcal
                   </span>
                 </button>
                 <button type="button" className="add-btn" aria-label={`Log ${m.name}`} onClick={() => onMeal(m)}>
@@ -710,6 +791,28 @@ function Home({
         </div>
       )}
     </>
+  );
+}
+
+/** A meal-prep batch: how many portions are left, ½ · 1 · 1½, and "+" to log. */
+function PrepLine({ prep, onLog }: { prep: MealPrep; onLog: (prep: MealPrep, size: number) => void }) {
+  const [size, setSize] = useState(prep.portions_left >= 1 ? 1 : 0.5);
+  const ok = canLog(prep, size);
+  const kcal = Math.round(portionNutrition(prep).kcal * size);
+  return (
+    <div className="food-line prep-line">
+      <PrepIcon size={40} />
+      <span className="prep-line-main">
+        <span className="row-title">{prep.name}</span>
+        <span className="row-sub">
+          {leftLabel(prep)} · {fmt(kcal)} kcal
+        </span>
+        <PortionPicker value={size} onChange={setSize} label={`Portion size for ${prep.name}`} />
+      </span>
+      <button type="button" className="add-btn" disabled={!ok} aria-label={`Log ${size} ${size <= 1 ? 'portion' : 'portions'} of ${prep.name}`} onClick={() => onLog(prep, size)}>
+        <IconPlus size={20} strokeWidth={2.6} />
+      </button>
+    </div>
   );
 }
 

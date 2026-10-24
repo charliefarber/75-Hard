@@ -5,9 +5,8 @@ import { useRef } from 'react';
 import { fmt } from '../ui';
 import { IconCamera, IconChevron, IconPlus } from '../Icons';
 import { MacroLine } from './bits';
+import { MealIcon } from './MealIcon';
 import { tap } from '../../lib/haptics';
-
-export const MEAL_EMOJI: Record<Meal, string> = { breakfast: '🥣', lunch: '🥗', dinner: '🍝', snacks: '🍎' };
 
 /** Today's meals at a glance, each with its own "+" (the Lifesum layout she's used to). */
 export function TodayFood({
@@ -18,6 +17,7 @@ export function TodayFood({
   onOpen,
   onType,
   onPhoto,
+  usual,
 }: {
   entries: FoodEntry[];
   /** Calories that came from Lifesum or were typed in, while the diary is empty. */
@@ -29,6 +29,8 @@ export function TodayFood({
   /** Open the logger with the keyboard up, ready to type what she ate. */
   onType: () => void;
   onPhoto: (file: File) => void;
+  /** One tap to log what she usually has for the meal coming up (only while that meal is empty). */
+  usual?: { meal: Meal; title: string; kcal: number; onLog: () => void } | null;
 }) {
   const photoInput = useRef<HTMLInputElement>(null);
   const meals = byMeal(entries);
@@ -81,11 +83,9 @@ export function TodayFood({
           const list = meals[m.id];
           const kcal = totals(list).kcal;
           return (
-            <div key={m.id} className="meal-row">
+            <div key={m.id} className={`meal-row${usual && usual.meal === m.id && !list.length ? ' has-usual' : ''}`}>
               <button type="button" className="meal-row-main" onClick={() => (tap(), list.length ? onOpen() : onAdd(m.id))}>
-                <span className="meal-emoji" aria-hidden="true">
-                  {MEAL_EMOJI[m.id]}
-                </span>
+                <MealIcon meal={m.id} />
                 <span className="row-text">
                   <span className="row-title">{m.label}</span>
                   <span className="row-sub">{list.length ? list.map((e) => e.name).join(', ') : 'Nothing yet'}</span>
@@ -95,6 +95,18 @@ export function TodayFood({
               <button type="button" className="add-btn" aria-label={`Add to ${m.label.toLowerCase()}`} onClick={() => (tap(), onAdd(m.id))}>
                 <IconPlus size={20} strokeWidth={2.6} />
               </button>
+              {usual && usual.meal === m.id && !list.length && (
+                <div className="usual-strip">
+                  <span className="row-text">
+                    <span className="usual-tag">Your usual</span>
+                    <span className="row-title">{usual.title}</span>
+                    <span className="row-sub">{fmt(usual.kcal)} kcal</span>
+                  </span>
+                  <button type="button" className="btn btn-sm btn-primary" onClick={() => (tap(), usual.onLog())}>
+                    Log it
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}

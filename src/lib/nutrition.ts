@@ -126,6 +126,11 @@ export function byMeal(entries: FoodEntry[]): Record<Meal, FoodEntry[]> {
   return out;
 }
 
+/** How many of breakfast, lunch, dinner and snacks have something logged. */
+export function mealsWithFood(entries: Pick<FoodEntry, 'meal'>[]): number {
+  return new Set(entries.map((e) => e.meal)).size;
+}
+
 /** The meal she's most likely logging right now. */
 export function mealForTime(d = new Date()): Meal {
   const m = d.getHours() * 60 + d.getMinutes();

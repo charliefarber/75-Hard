@@ -113,7 +113,12 @@
 }
 .meal-row-main:active { background: var(--surface-2); }
 .meal-row-main .row-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.meal-emoji { width: 38px; height: 38px; border-radius: 12px; background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-size: 19px; flex: none; }
+.meal-row.has-usual { flex-wrap: wrap; }
+/* One tap to log what she usually has for the meal coming up */
+.usual-strip { flex: 0 0 calc(100% - 66px); min-width: 0; box-sizing: border-box; display: flex; align-items: center; gap: 12px; margin: -4px 0 10px 66px; padding: 10px 10px 10px 14px; border-radius: 16px; background: var(--mint-tint); }
+.usual-strip .row-title { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.usual-strip .row-text { flex: 1; min-width: 0; }
+.usual-strip .btn { flex: none; }
 .meal-row-kcal { font-size: 15px; font-weight: 800; font-feature-settings: 'tnum' 0; padding-left: 4px; }
 
 /* ---------- Pet strip ---------- */
@@ -149,6 +154,7 @@
 .en-total { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line-strong); }
 .en-total > span:first-child { font-weight: 800; font-size: 15px; }
 .en-total.big strong { font-size: 20px; }
+.en-note { margin: 0; background: var(--mint-tint); color: var(--green-ink); border-radius: 14px; padding: 12px 14px; font-size: 13px; font-weight: 600; line-height: 1.45; }
 details.burn-how summary { font-weight: 800; color: var(--ink); cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
 details.burn-how summary::-webkit-details-marker { display: none; }
 details.burn-how summary::after { content: '+'; font-size: 20px; font-weight: 600; color: var(--muted); line-height: 1; }
