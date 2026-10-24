@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
 import { addDays, addMonths, format, getDay, getDaysInMonth, parseISO, startOfMonth } from 'date-fns';
 import { useApp } from '../data/AppData';
-import { CHALLENGE_LENGTH, summarise, toISODate, weekSteps } from '../lib/challenge';
+import { CHALLENGE_LENGTH, isDayComplete, summarise, toISODate, weekSteps } from '../lib/challenge';
 import { fmt } from '../components/ui';
 import { RecapSheet } from '../components/Recap';
 import { mondayOf } from '../lib/recap';
@@ -14,7 +14,9 @@ import { PhotosCard } from '../components/PhotosCard';
 import { PhotoViewer } from '../components/PhotoViewer';
 import { WeightSheet } from '../components/CheckIn';
 import { photoDays } from '../lib/photos';
-import { latestWeight, weighIns, weightTrend, weightUnitFor } from '../lib/body';
+import { kgToLb, latestWeight, weighIns, weightTrend, weightUnitFor } from '../lib/body';
+import { workoutGoal, workoutMinutes } from '../data/types';
+import WeeklyProgress, { type WeeklyMetric } from '../components/WeeklyProgress';
 import '../styles/log.css';
 
 const CELL: Record<string, { bg: string; fg: string; border: string }> = {
@@ -75,6 +77,18 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
   const todayKg = logs[today]?.weight_kg ?? null;
   const lastBefore = latestWeight(logs, toISODate(addDays(parseISO(today), -1)));
   const trend = weightTrend(weighIns(logs));
+  const dayLogs = Object.values(logs).sort((a, b) => a.log_date.localeCompare(b.log_date));
+  // Stone charts in pounds, as the weight card does.
+  const weeklyMetrics: WeeklyMetric[] = [
+    { key: 'weight', label: 'Weight', title: 'Weekly average weight', unit: unit === 'kg' ? 'kg' : 'lb', aggregate: 'average',
+      decimals: 1, values: weighIns(logs).map((w) => ({ date: w.date, value: unit === 'kg' ? w.kg : kgToLb(w.kg) })) },
+    { key: 'steps', label: 'Steps', title: 'Steps per week', unit: 'steps', aggregate: 'total',
+      goal: weekGoal, values: dayLogs.map((l) => ({ date: l.log_date, value: l.steps })) },
+    { key: 'workouts', label: 'Workouts', title: 'Average workout minutes a day', unit: 'min/day', aggregate: 'average',
+      goal: workoutGoal(profile), chart: 'bar', values: dayLogs.map((l) => ({ date: l.log_date, value: workoutMinutes(l) })) },
+    { key: 'full', label: 'Full days', title: 'Full days per week', unit: 'full days', aggregate: 'total',
+      values: dayLogs.map((l) => ({ date: l.log_date, value: isDayComplete(l, profile) ? 1 : 0 })) },
+  ];
 
   return (
     <div className="screen page-pad">
@@ -180,6 +194,9 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
           <Legend swatch={{ background: 'var(--line)' }} label="To come" />
         </div>
       </section>
+
+      <span className="section-label">Week by week</span>
+      <WeeklyProgress start={challenge.start_date} today={today} metrics={weeklyMetrics} />
 
       <span className="section-label">Body</span>
       <WeightCard logs={logs} unit={unit} today={today} onLog={() => setWeighing(true)} />
