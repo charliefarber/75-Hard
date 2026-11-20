@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { answerText, describePrompt, extractJson, parseEstimate, photoPrompt } from '../../supabase/functions/food/estimate';
+import { answerText, describePrompt, extractJson, parseEstimate, photoPrompt, SYSTEM_PROMPT } from '../../supabase/functions/food/estimate';
 
 describe('estimate answers', () => {
   it('finds the JSON inside prose and code fences, forgiving trailing commas and smart quotes', () => {
@@ -39,10 +39,37 @@ describe('estimate answers', () => {
     expect(answerText({ result: { response: { items: [] } } })).toBe('{"items":[]}');
     expect(answerText({ choices: [{ message: { content: 'hi' } }] })).toBe('hi');
     expect(answerText(null)).toBeNull();
+    // Responses API (gpt-oss): only the message text, never the reasoning
+    expect(
+      answerText({
+        result: {
+          output: [
+            { type: 'reasoning', content: [{ type: 'reasoning_text', text: 'She said a Greggs sausage roll {thinking}' }] },
+            { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '{"items":[],"note":""}' }] },
+          ],
+        },
+      }),
+    ).toBe('{"items":[],"note":""}');
+    expect(answerText({ result: { output_text: 'ok' } })).toBe('ok');
+    expect(answerText({ result: { response: '', choices: [{ message: { content: null } }] } })).toBeNull(); // cut off while thinking
+  });
+
+  it('keeps the chain it went on, but not "generic"', () => {
+    const r = parseEstimate({
+      items: [
+        { name: 'Sausage roll', kcal: 328, protein: 8.6, carbs: 23, fat: 22, source: 'Greggs' },
+        { name: 'Toast', kcal: 100, source: 'generic' },
+        { name: 'Soup', kcal: 200, source: '' },
+      ],
+    })!;
+    expect(r.items.map((i) => i.source)).toEqual(['Greggs', undefined, undefined]);
   });
 
   it('prompts mention the meal and her words', () => {
     expect(photoPrompt('lunch')).toContain('lunch');
     expect(describePrompt('dinner', 'two slices of pepperoni pizza')).toContain('two slices of pepperoni pizza');
+    // asks for chains' published numbers, split into parts, with the source
+    expect(SYSTEM_PROMPT).toMatch(/published UK nutrition/);
+    expect(SYSTEM_PROMPT).toMatch(/"source":""/);
   });
 });

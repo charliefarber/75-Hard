@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EstimatedItem, Food, FoodEntry, Meal, MealPrep, MyFood, SavedMeal } from '../../data/foodTypes';
 import { MEALS } from '../../data/foodTypes';
 import { useFood } from '../../data/FoodData';
@@ -32,11 +32,30 @@ import { PortionPicker } from './QuickLog';
 import { copyEntries, yourUsual, type Suggestion } from '../../lib/usual';
 import { canLog, gramsLeft, gramsNutrition, gramsPerPortion, leftLabel, portionNutrition, prepIdOf } from '../../lib/mealPrep';
 import { addDays as addIsoDays } from '../../lib/weeks';
+import { orderEntry, partLabel, type ChainOrder } from '../../lib/chains';
+import { describeUnderstood, ownEntries, understand, type OwnMatch } from '../../lib/understand';
 
 export type LoggerMode = 'search' | 'scan' | 'describe' | 'quick';
 
-/** One item from a photo / description estimate, already in the diary and still adjustable. */
-type Logged = { item: EstimatedItem; entry: FoodEntry; scale: number; on: boolean };
+/** One line on the "logged" screen: already in the diary (unless unticked), and still adjustable. */
+type Logged = {
+  entry: FoodEntry;
+  /** The amount at 1×; − / + scale it. */
+  base: { amount: number; unit: string };
+  scale: number;
+  on: boolean;
+  name: string;
+  /** What the estimate said ("1 medium bowl") and its weight at 1×. Her own things and orders show the entry's amount. */
+  portion?: string;
+  grams?: number;
+  /** Where the numbers came from: "Your meal prep", "Chipotle menu", "Greggs (estimate)". */
+  tag?: string;
+  /** Her own or published numbers, not an estimate. */
+  exact?: boolean;
+  guess?: boolean;
+  /** A restaurant order: what was in it, to tick and untick. */
+  order?: ChainOrder;
+};
 
 type Screen =
   | { name: 'home' }
@@ -51,6 +70,47 @@ function estimateEntry(it: EstimatedItem, scale: number, meal: Meal, date: strin
   const f = foodFromEstimate(it);
   const e = entryFor(f, scale, f.servings[0].label, meal, date, source);
   return it.grams >= 5 ? e : { ...e, grams: null };
+}
+
+function estimateRow(it: EstimatedItem, meal: Meal, date: string, source: 'photo' | 'describe'): Logged {
+  const entry = estimateEntry(it, 1, meal, date, source);
+  return {
+    entry,
+    base: { amount: entry.amount, unit: entry.unit },
+    scale: 1,
+    on: true,
+    name: it.name,
+    portion: it.portion,
+    grams: it.grams || undefined,
+    tag: it.source ? `${it.source} (estimate)` : undefined,
+    guess: it.confidence < 0.5,
+  };
+}
+
+const OWN_TAG: Record<OwnMatch['kind'], string> = { prep: 'Your meal prep', meal: 'Your saved meal', food: 'Your food' };
+
+function ownRow(entry: FoodEntry, tag: string): Logged {
+  return { entry, base: { amount: entry.amount, unit: entry.unit }, scale: 1, on: true, name: entry.name, tag, exact: true };
+}
+
+function orderRow(order: ChainOrder, meal: Meal, date: string): Logged {
+  return { entry: orderEntry(order, meal, date), base: { amount: order.count, unit: order.unit }, scale: 1, on: true, name: order.name, tag: `${order.chain} menu`, exact: true, order };
+}
+
+/** The line under the list: where the numbers came from, then any assumptions. */
+function footNote(items: Logged[], source: 'photo' | 'describe', notes: string[]): string {
+  const chains = [...new Set(items.filter((i) => i.order).map((i) => i.order!.chain))];
+  const published = chains.length ? `${chains.map((c) => `${c}’s`).join(' and ')} numbers come from their published UK nutrition.` : '';
+  const estimated = items.some((i) => !i.exact);
+  const exact = items.some((i) => i.exact);
+  const first = !estimated
+    ? [published, 'Untick anything you didn’t have.']
+    : [
+        published,
+        source === 'photo' ? 'Estimated from your photo.' : exact ? 'The rest is estimated from what you typed.' : 'Estimated from what you typed.',
+        'Untick anything that’s wrong, or use − / + if the portion was bigger or smaller.',
+      ];
+  return [...first, ...notes].filter(Boolean).join(' ');
 }
 
 const STARTERS = ['basic:banana', 'basic:egg', 'basic:oats', 'basic:greek_0', 'basic:chicken_breast', 'basic:rice_white', 'basic:avocado', 'basic:latte'];
@@ -162,15 +222,34 @@ export function FoodLogger({
     }
   }
 
-  /** An estimate goes straight into the diary; the "logged" screen lets her adjust it. */
-  async function logEstimate(res: { items: EstimatedItem[]; note: string }, source: 'photo' | 'describe', extra: { photo?: string; text?: string }) {
-    const items: Logged[] = res.items.map((item) => ({ item, entry: estimateEntry(item, 1, meal, date, source), scale: 1, on: true }));
-    const entries = items.map((i) => i.entry);
+  /** What she typed or photographed goes straight into the diary; the "logged" screen lets her adjust it. */
+  async function logRows(items: Logged[], source: 'photo' | 'describe', notes: string[], extra: { photo?: string; text?: string }) {
+    const entries = items.filter((i) => i.on).map((i) => i.entry);
     const ok = await logNow(entries, `${entries.length === 1 ? entries[0].name : `${entries.length} items`} · ${fmt(totals(entries).kcal)} kcal`);
     if (ok && collect) go({ name: 'home' }); // ingredients: no diary entries to adjust afterwards
-    else if (ok) go({ name: 'logged', items, source, note: res.note, ...extra });
+    else if (ok) go({ name: 'logged', items, source, note: footNote(items, source, notes), ...extra });
     else go({ name: 'home' });
   }
+
+  // Her meal prep, saved meals and foods, for recognising them in what she types.
+  const library = useMemo(
+    () => ({ preps: collect ? [] : food.mealPreps, meals: collect ? [] : food.savedMeals, foods: food.myFoods }),
+    [!!collect, food.mealPreps, food.savedMeals, food.myFoods], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  /** What's recognised in the box as she types, for the "Log …" button. */
+  const preview = useMemo(() => {
+    const q = query.trim();
+    if (q.length < 2) return null;
+    const u = understand(q, library);
+    if (!u.own.length && !u.orders.length) return null;
+    try {
+      const kcal =
+        u.own.reduce((sum, m) => sum + totals(ownEntries(m, meal, date).entries).kcal, 0) + u.orders.reduce((sum, o) => sum + orderEntry(o, meal, date).kcal, 0);
+      return { text: describeUnderstood(u)!, kcal: Math.round(kcal), rest: u.rest };
+    } catch {
+      return null;
+    }
+  }, [query, library, meal, date]);
 
   function quickLog(f: Food) {
     tap();
@@ -212,7 +291,12 @@ export function FoodLogger({
         setNotice('Couldn’t spot any food in that photo. Try closer, or type what it was instead.');
         return;
       }
-      await logEstimate(res, 'photo', { photo: preview });
+      await logRows(
+        res.items.map((it) => estimateRow(it, meal, date, 'photo')),
+        'photo',
+        res.note ? [res.note] : [],
+        { photo: preview },
+      );
     } catch (e) {
       go({ name: 'home' });
       if (e instanceof EstimateError) setNotice(e.message);
@@ -222,38 +306,75 @@ export function FoodLogger({
 
   async function onDescribe(text: string) {
     tap();
-    go({ name: 'working', label: `Working out “${text.length > 40 ? text.slice(0, 39) + '…' : text}”…` });
-    try {
-      const res = await food.estimate({ action: 'describe', meal, text });
-      if (!res.items.length) {
-        go({ name: 'home' });
-        setNotice('Couldn’t work that one out. Add a little more detail, like how much.');
-        return;
-      }
-      setQuery('');
-      await logEstimate(res, 'describe', { text });
-    } catch (e) {
-      go({ name: 'home' });
-      if (e instanceof EstimateError) setNotice(e.message);
-      else reportError(e);
+    // Her own things and restaurant orders are exact and instant; only the rest is estimated.
+    const u = understand(text, library);
+    const rows: Logged[] = [];
+    const notes: string[] = [];
+    for (const m of u.own) {
+      const r = ownEntries(m, meal, date);
+      if (r.note) notes.push(r.note);
+      const tag = m.kind === 'meal' ? `Your ${m.meal.name}` : OWN_TAG[m.kind];
+      rows.push(...r.entries.map((e) => ownRow(e, tag)));
     }
+    for (const o of u.orders) {
+      rows.push(orderRow(o, meal, date));
+      notes.push(...o.notes);
+    }
+    const known = rows.length > 0;
+    if (u.rest && (food.ai !== false || !known)) {
+      const ask = known ? u.rest : text;
+      go({ name: 'working', label: `Working out “${ask.length > 40 ? ask.slice(0, 39) + '…' : ask}”…` });
+      try {
+        const res = await food.estimate({ action: 'describe', meal, text: ask });
+        rows.push(...res.items.map((it) => estimateRow(it, meal, date, 'describe')));
+        if (res.note) notes.push(res.note);
+        if (!res.items.length && !known) {
+          go({ name: 'home' });
+          setNotice('Couldn’t work that one out. Add a little more detail, like how much.');
+          return;
+        }
+        if (!res.items.length) notes.push(`Couldn’t work out “${u.rest}”, so it isn’t in.`);
+      } catch (e) {
+        if (!known) {
+          go({ name: 'home' });
+          if (e instanceof EstimateError) setNotice(e.message);
+          else reportError(e);
+          return;
+        }
+        notes.push(`“${u.rest}” isn’t in: ${e instanceof EstimateError ? e.message : 'the estimate didn’t work.'}`);
+      }
+    } else if (u.rest) notes.push(`“${u.rest}” isn’t in: estimates aren’t switched on.`);
+    setQuery('');
+    await logRows(rows, 'describe', notes, { text });
   }
 
-  /** Adjust an item on the "logged" screen; the diary follows straight away. */
-  async function changeLogged(idx: number, patch: { scale?: number; on?: boolean }) {
+  /** Adjust a line on the "logged" screen (tick, − / +, or a part of an order); the diary follows straight away. */
+  async function changeLogged(idx: number, patch: { scale?: number; on?: boolean; part?: number }) {
     const sc = screenRef.current;
     if (sc.name !== 'logged') return;
     const cur = sc.items[idx];
-    const next: Logged = { ...cur, ...patch };
-    if (patch.scale !== undefined) next.entry = withAmount(cur.entry, patch.scale, cur.entry.unit);
+    const next: Logged = { ...cur };
+    if (patch.on !== undefined) next.on = patch.on;
+    if (patch.scale !== undefined) next.scale = patch.scale;
+    const amount = cur.base.amount * next.scale;
+    if (patch.part !== undefined && cur.order) {
+      const order = { ...cur.order, parts: cur.order.parts.map((p, i) => (i === patch.part ? { ...p, on: !p.on } : p)) };
+      next.order = order;
+      next.entry = { ...orderEntry(order, cur.entry.meal, cur.entry.log_date, amount), id: cur.entry.id, created_at: cur.entry.created_at };
+      if (!order.parts.some((p) => p.on)) next.on = false;
+      else if (order.parts[patch.part].on) next.on = true; // ticking a part brings the order back
+    } else if (patch.scale !== undefined) {
+      const e = withAmount(cur.entry, amount, cur.base.unit);
+      next.entry = cur.entry.grams == null ? { ...e, grams: null } : e; // one-portion foods have no real weight
+    }
     const items = sc.items.map((x, i) => (i === idx ? next : x));
     const updated = { ...sc, items };
     screenRef.current = updated;
     setScreen(updated);
     tap();
-    if (patch.on === false) await food.remove([cur.entry.id]);
-    else if (patch.on === true) await food.restore([next.entry]);
-    else if (next.on) await food.update(next.entry);
+    if (cur.on && !next.on) await food.remove([cur.entry.id]);
+    else if (!cur.on && next.on) await food.restore([next.entry]);
+    else if (next.on && next.entry !== cur.entry) await food.update(next.entry);
   }
 
   async function moveLogged(m: Meal) {
@@ -351,6 +472,7 @@ export function FoodLogger({
             onScan={() => (tap(), setScanning(true))}
             onPhoto={() => (tap(), photoInput.current?.click())}
             onDescribe={onDescribe}
+            preview={preview}
             focus={!!focus || mode === 'describe'}
             onQuickAdd={() => go({ name: 'quick' })}
             onCustom={(n) => go({ name: 'custom', foodName: n })}
@@ -443,7 +565,6 @@ export function FoodLogger({
         {screen.name === 'logged' && (
           <LoggedList
             items={screen.items}
-            source={screen.source}
             note={screen.note}
             photo={screen.photo}
             meal={meal}
@@ -535,6 +656,7 @@ function Home({
   onScan,
   onPhoto,
   onDescribe,
+  preview,
   onQuickAdd,
   onCustom,
   onMeal,
@@ -559,6 +681,8 @@ function Home({
   onScan: () => void;
   onPhoto: () => void;
   onDescribe: (text: string) => void;
+  /** Her own things or a restaurant order recognised in the box: exact numbers, logged without an estimate. */
+  preview: { text: string; kcal: number; rest: string } | null;
   onQuickAdd: () => void;
   onCustom: (name?: string) => void;
   onMeal: (m: SavedMeal) => void;
@@ -622,7 +746,7 @@ function Home({
         className="food-search"
         onSubmit={(e) => {
           e.preventDefault();
-          if (ai && q.length >= 2) onDescribe(q);
+          if ((ai || preview) && q.length >= 2) onDescribe(q);
         }}
       >
         <label className="pick-search">
@@ -651,14 +775,18 @@ function Home({
         </label>
       </form>
 
-      {ai && q.length >= 2 && (
-        <button type="button" className="ai-log" onClick={() => onDescribe(q)}>
+      {(ai || preview) && q.length >= 2 && (
+        <button type="button" className={`ai-log${preview ? ' known' : ''}`} onClick={() => onDescribe(q)}>
           <span className="ai-log-icon" aria-hidden="true">
-            ✨
+            {preview ? <IconCheck size={22} strokeWidth={3} /> : '✨'}
           </span>
           <span className="row-text">
             <span className="row-title">Log “{q.length > 48 ? q.slice(0, 47) + '…' : q}”</span>
-            <span className="row-sub">Works out the calories and macros, then adds it to {collecting ? 'the batch' : mealLabel(meal).toLowerCase()}</span>
+            <span className="row-sub">
+              {preview
+                ? `${preview.text} · ${fmt(preview.kcal)} kcal${preview.rest ? (ai ? ', and works out the rest' : '') : ''}`
+                : `Works out the calories and macros, then adds it to ${collecting ? 'the batch' : mealLabel(meal).toLowerCase()}`}
+            </span>
           </span>
         </button>
       )}
@@ -691,7 +819,12 @@ function Home({
           </button>
         </div>
       )}
-      {!q && ai && <p className="ai-tip">Type what you ate, like “avocado toast and a latte”, or tap the 🎤 on your keyboard and say it.</p>}
+      {!q && ai && (
+        <p className="ai-tip">
+          Type what you ate, like “avocado toast and a latte”, {preps[0] ? `“150 g of the ${preps[0].name.toLowerCase()}”` : '“2 eggs on toast”'} or “steak Chipotle bowl”, or tap
+          the 🎤 on your keyboard and say it.
+        </p>
+      )}
 
       {!q && usual && (
         <Group label={`Your usual for ${mealLabel(meal).toLowerCase()}`}>
@@ -977,7 +1110,20 @@ function Detail({
         <div className="row-text">
           <span className="food-detail-name">{food.name}</span>
           <span className="row-sub">
-            {[food.brand, food.source === 'off' ? 'Open Food Facts' : food.source === 'basic' ? 'Everyday food' : 'Your food'].filter(Boolean).join(' · ')}
+            {[
+              food.brand,
+              food.source === 'off'
+                ? 'Open Food Facts'
+                : food.source === 'basic'
+                  ? 'Everyday food'
+                  : food.key.startsWith('chain:')
+                    ? 'Published nutrition'
+                    : food.key.startsWith('est:')
+                      ? 'Estimated'
+                      : 'Your food',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </span>
         </div>
         <button type="button" className={`star-btn${favorite ? ' on' : ''}`} aria-pressed={favorite} aria-label={favorite ? 'Remove from favourites' : 'Add to favourites'} onClick={onFavorite}>
@@ -1175,7 +1321,6 @@ function QuickAdd({
 
 function LoggedList({
   items,
-  source,
   note,
   photo,
   meal,
@@ -1184,12 +1329,11 @@ function LoggedList({
   onMore,
 }: {
   items: Logged[];
-  source: 'photo' | 'describe';
   note: string;
   photo?: string;
   meal: Meal;
   onMeal: (m: Meal) => void;
-  onChange: (idx: number, patch: { scale?: number; on?: boolean }) => void;
+  onChange: (idx: number, patch: { scale?: number; on?: boolean; part?: number }) => void;
   onMore: () => void;
 }) {
   const on = items.filter((i) => i.on);
@@ -1209,45 +1353,87 @@ function LoggedList({
         </span>
       </div>
       <div className="pick-list">
-        {items.map((it, i) => (
-          <div key={it.entry.id} className={`review-item${it.on ? '' : ' off'}`}>
-            <button
-              type="button"
-              className={`check${it.on ? ' on' : ''}`}
-              aria-pressed={it.on}
-              aria-label={it.on ? `Remove ${it.item.name}` : `Add ${it.item.name} back`}
-              onClick={() => onChange(i, { on: !it.on })}
-            >
-              {it.on && <IconCheck size={16} strokeWidth={3} />}
-            </button>
-            <div className="row-text">
-              <span className="row-title">{it.item.name}</span>
-              <span className="row-sub">
-                {it.item.portion}
-                {it.item.grams ? ` · ${Math.round(it.item.grams * it.scale)} g` : ''}
-                {it.item.confidence < 0.5 ? ' · rough guess' : ''}
-              </span>
-              <MacroLine p={it.entry.protein_g} c={it.entry.carbs_g} f={it.entry.fat_g} />
-            </div>
-            <div className="review-amount">
-              <strong>{fmt(Math.round(it.entry.kcal))}</strong>
-              <div className="mini-stepper">
-                <button type="button" aria-label={`Less ${it.item.name}`} disabled={!it.on} onClick={() => onChange(i, { scale: Math.max(0.25, it.scale - 0.25) })}>
-                  −
+        {items.map((it, i) => {
+          const amount = it.portion
+            ? `${it.portion}${it.grams ? ` · ${Math.round(it.grams * it.scale)} g` : ''}`
+            : amountText(it.entry);
+          const times = it.base.amount * it.scale;
+          return (
+            <div key={it.entry.id} className="logged-line">
+              <div className={`review-item${it.on ? '' : ' off'}`}>
+                <button
+                  type="button"
+                  className={`check${it.on ? ' on' : ''}`}
+                  aria-pressed={it.on}
+                  aria-label={it.on ? `Remove ${it.name}` : `Add ${it.name} back`}
+                  onClick={() => onChange(i, { on: !it.on })}
+                >
+                  {it.on && <IconCheck size={16} strokeWidth={3} />}
                 </button>
-                <span>{niceNumber(it.scale)}×</span>
-                <button type="button" aria-label={`More ${it.item.name}`} disabled={!it.on} onClick={() => onChange(i, { scale: Math.min(4, it.scale + 0.25) })}>
-                  +
-                </button>
+                <div className="row-text">
+                  <span className="row-title">{it.name}</span>
+                  <span className="row-sub">
+                    {amount}
+                    {it.tag && (
+                      <>
+                        {' · '}
+                        <span className={`src-tag${it.exact ? ' exact' : ''}`}>
+                          {it.exact && <IconCheck size={11} strokeWidth={3.2} />}
+                          {it.tag}
+                        </span>
+                      </>
+                    )}
+                    {it.guess ? ' · rough guess' : ''}
+                  </span>
+                  <MacroLine p={it.entry.protein_g} c={it.entry.carbs_g} f={it.entry.fat_g} />
+                </div>
+                <div className="review-amount">
+                  <strong>{fmt(Math.round(it.entry.kcal))}</strong>
+                  <div className="mini-stepper">
+                    <button type="button" aria-label={`Less ${it.name}`} disabled={!it.on} onClick={() => onChange(i, { scale: Math.max(0.25, it.scale - 0.25) })}>
+                      −
+                    </button>
+                    <span>{niceNumber(it.scale)}×</span>
+                    <button type="button" aria-label={`More ${it.name}`} disabled={!it.on} onClick={() => onChange(i, { scale: Math.min(4, it.scale + 0.25) })}>
+                      +
+                    </button>
+                  </div>
+                </div>
               </div>
+              {it.order && (
+                <div className={`order-parts${it.on ? '' : ' off'}`} role="group" aria-label={`What was in your ${it.name.toLowerCase()}`}>
+                  <span className="order-parts-cap">What was in it</span>
+                  {it.order.parts.map((part, j) => {
+                    const label = partLabel(part, it.order!);
+                    const kcal = Math.round(part.item.kcal * part.qty * times);
+                    return (
+                      <button
+                        key={part.item.id}
+                        type="button"
+                        className={`order-part${part.on ? ' on' : ''}`}
+                        aria-pressed={part.on}
+                        onClick={() => onChange(i, { part: j })}
+                      >
+                        <span className={`check${part.on ? ' on' : ''}`} aria-hidden="true">
+                          {part.on && <IconCheck size={13} strokeWidth={3.2} />}
+                        </span>
+                        <span className="order-part-name">
+                          {part.item.name}
+                          {label && <em>{label}</em>}
+                        </span>
+                        <span className="order-part-kcal">{part.on ? fmt(kcal) : `+${fmt(kcal)}`}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <MealPick meal={meal} setMeal={onMeal} />
       <p className="card-sub" style={{ margin: 0, lineHeight: 1.5 }}>
-        {source === 'photo' ? 'Estimated from your photo.' : 'Estimated from what you typed.'} Untick anything that’s wrong, or use − / + if the portion was bigger or smaller.
-        {note ? ` ${note}` : ''}
+        {note}
       </p>
       <button type="button" className="btn btn-ghost btn-block" onClick={onMore}>
         Log something else
