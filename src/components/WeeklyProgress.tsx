@@ -139,9 +139,9 @@ export default function WeeklyProgress(props: WeeklyProgressProps) {
       </div>
 
       <div style={{ background: C.card, borderRadius: 20, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{metric.title}</h2>
-          <span style={{ fontSize: 12, color: C.muted }}>Weeks 1–{weeks.length}</span>
+          <span style={{ fontSize: 12, color: C.muted, whiteSpace: 'nowrap' }}>Weeks 1–{weeks.length}</span>
         </div>
         <Chart weeks={weeks} isLine={isLine} goal={metric.goal} decimals={d} title={metric.title} />
         <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: `1px solid ${C.line}`, paddingTop: 10, fontSize: 12, color: C.muted }}>
