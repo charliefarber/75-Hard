@@ -18,11 +18,19 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const CF_BASE = Deno.env.get('CF_API_BASE') ?? 'https://api.cloudflare.com/client/v4';
-const MODELS = [
+/** Photos: models that can see. */
+const VISION_MODELS = [
   '@cf/meta/llama-4-scout-17b-16e-instruct',
   '@cf/mistralai/mistral-small-3.1-24b-instruct',
   '@cf/google/gemma-3-12b-it',
 ];
+/**
+ * Descriptions: OpenAI's open 120B model first (it knows far more menus and foods than the small
+ * vision models), then the same fallbacks. Still on the free Workers AI allowance.
+ */
+const TEXT_MODELS = ['@cf/openai/gpt-oss-120b', ...VISION_MODELS];
+/** A model slower than this is skipped for the next one (the big text model gets less time: there's a fallback). */
+const timeoutFor = (model: string) => (model.includes('gpt-oss') ? 15_000 : 30_000);
 const DAILY_LIMIT = 60;
 const MAX_IMAGE_CHARS = 2_000_000; // ~1.5 MB JPEG as base64
 const OFF_UA = '75Hard/1.0 (https://github.com/charliefarber/75-Hard)';
@@ -66,28 +74,67 @@ async function withinLimit(userId: string): Promise<boolean> {
   return true; // don't block her because the counter broke
 }
 
-async function runModel(model: string, acct: string, token: string, prompt: string, image?: string): Promise<string> {
-  const url = `${CF_BASE}/accounts/${acct}/ai/run/${model}`;
+/** Models that refused a request shape (4xx) in this instance: skipped for a while, so a broken one doesn't slow every estimate. */
+const resting = new Map<string, number>();
+/** Which request shape each model last accepted. */
+const shapeFor = new Map<string, number>();
+
+function bodiesFor(model: string, prompt: string, image?: string): Record<string, unknown>[] {
   const system = { role: 'system', content: SYSTEM_PROMPT };
+  if (model.includes('gpt-oss')) {
+    // Reasoning model: room to think before answering. Responses API shape first (lets us ask for
+    // low effort, so it's quick), then the documented chat shape.
+    return [
+      { input: [system, { role: 'user', content: prompt }], reasoning: { effort: 'low' }, max_output_tokens: 3000 },
+      { messages: [system, { role: 'user', content: prompt }], max_tokens: 3000 },
+    ];
+  }
   // Vision models on Workers AI take the image either as a content part or as a top-level field.
-  const bodies = image
+  return image
     ? [
         { messages: [system, { role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: image } }] }], max_tokens: 1200, temperature: 0.2 },
         { messages: [system, { role: 'user', content: prompt }], image, max_tokens: 1200, temperature: 0.2 },
       ]
     : [{ messages: [system, { role: 'user', content: prompt }], max_tokens: 900, temperature: 0.2 }];
+}
+
+/**
+ * Ask one model, trying its request shapes in turn (the one that worked last time first), until one
+ * gives an answer `usable` accepts. A shape that answers but unusably (cut off, not JSON) counts as
+ * not working, so it isn't tried first next time.
+ */
+async function runModel<T>(model: string, acct: string, token: string, prompt: string, image: string | undefined, usable: (text: string) => T | null): Promise<T> {
+  const url = `${CF_BASE}/accounts/${acct}/ai/run/${model}`;
+  const bodies = bodiesFor(model, prompt, image);
+  const first = shapeFor.get(model) ?? 0;
+  const order = [first, ...bodies.map((_, i) => i).filter((i) => i !== first)];
   let last = '';
-  for (const body of bodies) {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+  let refused = 0;
+  for (const i of order) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(bodies[i]),
+        signal: AbortSignal.timeout(timeoutFor(model)),
+      });
+    } catch (e) {
+      const slow = e instanceof Error && e.name === 'TimeoutError';
+      if (slow) resting.set(model, Date.now() + 10 * 60_000);
+      throw new Error(`${model}: ${slow ? 'timed out' : String(e)}`);
+    }
     const data = await res.json().catch(() => null);
     const text = res.ok && data?.success !== false ? answerText(data) : null;
-    if (text) return text;
-    last = `${res.status} ${JSON.stringify(data?.errors ?? data ?? '').slice(0, 300)}`;
+    const value = text ? usable(text) : null;
+    if (value != null) {
+      shapeFor.set(model, i);
+      return value;
+    }
+    if (res.status >= 400 && res.status < 500 && res.status !== 429) refused++;
+    last = text ? `unreadable answer (shape ${i}): ${text.slice(0, 200)}` : `${res.status} ${JSON.stringify(data?.errors ?? data ?? '').slice(0, 300)}`;
   }
+  if (refused === bodies.length) resting.set(model, Date.now() + 30 * 60_000);
   throw new Error(`${model}: ${last}`);
 }
 
@@ -120,12 +167,18 @@ async function estimate(prompt: string, image?: string) {
   const { acct, token } = (await credentials())!;
   const problems: string[] = [];
   let empty: { items: unknown[]; note: string } | null = null;
-  for (const model of MODELS) {
+  const now = Date.now();
+  const models = (image ? VISION_MODELS : TEXT_MODELS).filter((m) => (resting.get(m) ?? 0) < now);
+  for (const model of models.length ? models : VISION_MODELS) {
+    const started = Date.now();
     try {
-      const parsed = parseEstimate(await runModel(model, acct, token, prompt, image));
-      if (parsed?.items.length) return { status: 200, body: { ...parsed, model } };
-      if (parsed) empty = parsed; // it answered but saw no food; a second opinion is cheap
-      problems.push(`${model}: ${parsed ? 'no items' : 'unreadable answer'}`);
+      const parsed = await runModel(model, acct, token, prompt, image, parseEstimate);
+      if (parsed.items.length) {
+        console.log('estimate', model, `${Date.now() - started} ms`, problems.length ? `after ${problems.join(' | ')}` : '');
+        return { status: 200, body: { ...parsed, model } };
+      }
+      empty = parsed; // it answered but saw no food; a second opinion is cheap
+      problems.push(`${model}: no items`);
     } catch (e) {
       problems.push(String(e instanceof Error ? e.message : e));
     }

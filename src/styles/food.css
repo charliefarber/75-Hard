@@ -334,3 +334,26 @@
 .slot-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 .slot-chip { min-height: 40px; padding: 0 16px; border-radius: 20px; border: 1.5px solid var(--line-strong); background: var(--surface); color: var(--ink); font-size: 14px; font-weight: 700; }
 .slot-chip[aria-pressed='true'] { background: var(--forest); border-color: var(--forest); color: #fff; }
+
+/* ---------- "Logged" lines: where the numbers came from, and a restaurant order's parts (FoodLogger) ---------- */
+
+.logged-line { position: relative; }
+.logged-line + .logged-line::before { content: ''; position: absolute; left: 20px; right: 20px; top: 0; height: 1px; background: var(--line); }
+.src-tag { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; }
+.src-tag.exact { color: var(--green-ink); }
+.order-parts { margin: -2px 20px 12px 60px; padding: 6px 4px; border-radius: 14px; background: var(--surface-2); display: flex; flex-direction: column; }
+.order-parts.off { opacity: 0.55; }
+.order-parts-cap { padding: 2px 10px 4px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.order-part {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; border: 0; background: none; border-radius: 10px;
+  padding: 6px 10px; text-align: left; color: var(--ink); font-size: 14px; font-weight: 650;
+}
+.order-part:active { background: rgba(20, 35, 26, 0.05); }
+.order-part .check { width: 22px; height: 22px; border-radius: 7px; margin-top: 0; }
+.order-part:not(.on) { color: var(--muted); }
+.order-part-name { flex: 1; min-width: 0; }
+.order-part-name em { font-style: normal; font-size: 12px; font-weight: 700; color: var(--carbs); margin-left: 6px; }
+.order-part-kcal { font-size: 13px; font-weight: 700; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.order-part:not(.on) .order-part-kcal { color: var(--green-ink); }
+.ai-log.known { background: linear-gradient(135deg, #e3f4e8 0%, #eef8f1 100%); box-shadow: inset 0 0 0 1.5px var(--mint-soft); }
+.ai-log.known .ai-log-icon { color: var(--green); }

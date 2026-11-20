@@ -45,6 +45,8 @@ export interface Food {
   barcode?: string;
   /** Small product photo (Open Food Facts). */
   image?: string;
+  /** A restaurant order (key "chain:…"): what was in it (menu item ids, servings), so the same order starts from it next time. */
+  parts?: { id: string; qty: number }[];
 }
 
 export type EntrySource = FoodSource | 'quick' | 'photo' | 'describe' | 'meal';
@@ -129,4 +131,6 @@ export interface EstimatedItem {
   fat: number;
   /** 0–1, how sure the model is. */
   confidence: number;
+  /** The restaurant, café or brand whose published numbers it went on ("Greggs"), if any. */
+  source?: string;
 }

@@ -190,9 +190,9 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
     [updateLog],
   );
 
-  /** Remember what she logged: recents, last amounts, how often. */
+  /** Remember what she logged: recents, last amounts, how often (`bump`: count it as another use). */
   const remember = useCallback(
-    (entries: FoodEntry[]) => {
+    (entries: FoodEntry[], bump = true) => {
       const now = new Date().toISOString();
       const changed: MyFood[] = [];
       const list = [...myFoodsRef.current];
@@ -206,7 +206,7 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
           food: e.food,
           favorite: prev?.favorite ?? false,
           custom: prev?.custom ?? false,
-          uses: (prev?.uses ?? 0) + 1,
+          uses: (prev?.uses ?? 0) + (bump || !prev ? 1 : 0),
           last_amount: e.amount,
           last_unit: e.unit,
           last_meal: e.meal,
@@ -303,6 +303,8 @@ export function FoodDataProvider({ children }: { children: ReactNode }) {
       syncDay(entry.log_date, next[entry.log_date]);
       if (old && old.log_date !== entry.log_date) syncDay(old.log_date, next[old.log_date]);
       if (entry.food && old?.food && (old.amount !== entry.amount || old.unit !== entry.unit)) remember([entry]);
+      // a restaurant order with parts ticked or unticked: her library keeps the latest, for next time
+      else if (entry.food && old?.food && entry.food !== old.food) remember([entry], false);
       // ½ → 1 portion of a meal prep: the batch follows
       const prepChange = old && prepIdOf(old) && prepIdOf(old) === prepIdOf(entry) ? [entry, { ...old, amount: -old.amount }] : null;
       if (prepChange) shiftPreps(prepChange, 1);
