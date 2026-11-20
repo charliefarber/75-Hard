@@ -2,10 +2,10 @@ import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
 import { addDays, addMonths, format, getDay, getDaysInMonth, parseISO, startOfMonth } from 'date-fns';
 import { useApp } from '../data/AppData';
-import { CHALLENGE_LENGTH, isDayComplete, summarise, toISODate, weekSteps } from '../lib/challenge';
+import { CHALLENGE_LENGTH, summarise, toISODate, weekSteps, type ChallengeSummary } from '../lib/challenge';
 import { fmt } from '../components/ui';
 import { RecapSheet, reportWeek, useReportInput } from '../components/Recap';
-import { HabitsSoFarCard, SoFarCard } from '../components/SoFar';
+import { HabitsSoFarCard } from '../components/SoFar';
 import { challengeStats, dailySeries, reportTeaser, weekReport } from '../lib/report';
 import { macroGoals } from '../lib/nutrition';
 import { IconCalendarCheck, IconChevron, IconChevronLeft } from '../components/Icons';
@@ -17,8 +17,8 @@ import { PhotoViewer } from '../components/PhotoViewer';
 import { WeightSheet } from '../components/CheckIn';
 import { photoDays } from '../lib/photos';
 import { kgToLb, latestWeight, weighIns, weightTrend, weightUnitFor } from '../lib/body';
-import { workoutGoal, workoutMinutes } from '../data/types';
 import WeeklyProgress, { type WeeklyMetric } from '../components/WeeklyProgress';
+import { FitnessCard, StreakCard, TrainingCard, TrainingLogCard } from '../components/Training';
 import '../styles/log.css';
 
 const CELL: Record<string, { bg: string; fg: string; border: string }> = {
@@ -37,7 +37,6 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
   const [recap, setRecap] = useState<string | null>(null);
   const [viewer, setViewer] = useState<null | { index: number; compare: boolean }>(null);
   const [weighing, setWeighing] = useState(false);
-  const [monthPick, setMonthPick] = useState<number | null>(null);
   const report = useReportInput();
   const stats = useMemo(() => (report ? challengeStats(report) : null), [report]);
   const series = useMemo(() => (report ? dailySeries(report) : null), [report]);
@@ -50,24 +49,6 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
   const attempt = history.findIndex((c) => c.id === challenge.id) + 1 || history.length;
 
   const byDate = new Map(summary.timeline.map((t) => [t.date, t]));
-  const first = parseISO(summary.timeline[0]?.date ?? challenge.start_date);
-  const last = parseISO(summary.timeline[summary.timeline.length - 1]?.date ?? challenge.start_date);
-  const months: { key: string; title: string; cells: (string | null)[] }[] = [];
-  for (let m = startOfMonth(first); m <= last; m = addMonths(m, 1)) {
-    const lead = (getDay(m) + 6) % 7; // Monday-first
-    const days = Array.from({ length: getDaysInMonth(m) }, (_, i) => toISODate(addDays(m, i)));
-    const cells: (string | null)[] = [...Array(lead).fill(null), ...days];
-    // Keep only the weeks that touch the challenge.
-    const weeks: (string | null)[][] = [];
-    for (let w = 0; w < cells.length; w += 7) weeks.push(cells.slice(w, w + 7));
-    const kept = weeks.filter((wk) => wk.some((c) => c && byDate.has(c)));
-    if (kept.length) months.push({ key: toISODate(m), title: format(m, 'MMMM yyyy'), cells: kept.flat() });
-  }
-  // One month at a time, starting on this month.
-  const thisMonth = months.findIndex((m) => m.key === toISODate(startOfMonth(parseISO(today))));
-  const monthIdx = Math.min(months.length - 1, Math.max(0, monthPick ?? (thisMonth >= 0 ? thisMonth : today < months[0]?.key ? 0 : months.length - 1)));
-  const month = months[monthIdx];
-
   const sw = weekSteps(logs, today);
   const weekGoal = profile.step_goal * 7;
   const daysLeft = sw.days.filter((d) => d.date > today).length + 1; // including today
@@ -93,12 +74,6 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
       decimals: 1, values: weighIns(logs).map((w) => ({ date: w.date, value: unit === 'kg' ? w.kg : kgToLb(w.kg) })) },
     { key: 'steps', label: 'Steps', title: 'Steps per week', unit: 'steps', aggregate: 'total',
       goal: weekGoal, values: dayLogs.map((l) => ({ date: l.log_date, value: l.steps })) },
-    { key: 'workouts', label: 'Workouts', title: 'Average workout minutes a day', unit: 'min/day', aggregate: 'average',
-      goal: workoutGoal(profile), chart: 'bar', values: dayLogs.map((l) => ({ date: l.log_date, value: workoutMinutes(l) })) },
-    { key: 'full', label: 'Full days', title: 'Full days per week', unit: 'full days', aggregate: 'total',
-      values: dayLogs.map((l) => ({ date: l.log_date, value: isDayComplete(l, profile) ? 1 : 0 })) },
-    { key: 'tasks', label: 'Tasks', title: 'Share of daily tasks done', unit: '%', aggregate: 'average', chart: 'bar',
-      values: series?.tasks ?? [] },
     { key: 'water', label: 'Water', title: 'Average water a day', unit: 'L/day', aggregate: 'average', decimals: 1,
       goal: profile.water_goal_ml / 1000, values: series?.water ?? [] },
     { key: 'kcal', label: 'Calories', title: 'Calories on fully logged days', unit: 'kcal/day', aggregate: 'average',
@@ -109,18 +84,16 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
 
   return (
     <div className="screen page-pad">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', padding: '0 4px', gap: 8, flexWrap: 'wrap' }}>
-        <h1 className="page-title">Progress</h1>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--muted)', paddingBottom: 4 }}>
-          Attempt {attempt} · from {format(parseISO(challenge.start_date), 'd MMM')}
-        </span>
-      </div>
+      <h1 className="page-title" style={{ padding: '0 4px' }}>
+        Progress
+      </h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
-        <Tile value={String(summary.completedDays)} label={summary.completedDays === 1 ? 'full day' : 'full days'} dark />
-        <Tile value={summary.currentDay ? `Day ${summary.currentDay}` : '–'} label={`of ${CHALLENGE_LENGTH}`} />
-        <Tile value={String(summary.remaining)} label={summary.remaining === 1 ? 'day to go' : 'days to go'} />
+      <TrainingCard logs={logs} today={today} profile={profile} />
+      <div className="duo">
+        <StreakCard logs={logs} today={today} />
+        <TrainingLogCard logs={logs} today={today} />
       </div>
+      <FitnessCard logs={logs} today={today} />
 
       <button
         className="card recap-btn"
@@ -136,9 +109,173 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
         <IconChevron size={18} style={{ color: '#9aa59d' }} />
       </button>
 
+      <span className="section-label">Weekly stats</span>
+      <WeeklyProgress today={today} metrics={weeklyMetrics} />
+
+      <span className="section-label">Body</span>
+      <WeightCard logs={logs} unit={unit} today={today} onLog={() => setWeighing(true)} />
+
+      <PhotosCard
+        photos={photos}
+        onOpen={(index) => setViewer({ index, compare: false })}
+        onCompare={() => setViewer({ index: photos.length - 1, compare: true })}
+      />
+
+      <span className="section-label">Food & activity</span>
+      <CaloriesWeekCard logs={logs} profile={profile} today={today} />
+
+      <section className="card">
+        <div className="card-head" style={{ alignItems: 'baseline' }}>
+          <h2 className="card-title">Steps this week</h2>
+          <span className="card-sub">
+            <strong style={{ color: 'var(--ink)', fontSize: 15 }}>{fmt(sw.total)}</strong> / {fmt(weekGoal)}
+          </span>
+        </div>
+        <div style={{ height: 10, borderRadius: 5, background: 'var(--steps-tint)', overflow: 'hidden' }} aria-hidden="true">
+          <div style={{ height: '100%', width: `${Math.min(100, (sw.total / weekGoal) * 100)}%`, background: 'var(--steps)', borderRadius: 5, transition: 'width 0.6s var(--ease)' }} />
+        </div>
+        <span className="card-sub">
+          {sw.total >= weekGoal
+            ? 'Weekly goal hit. Nice.'
+            : `${fmt(perDayNeeded)} a day from here hits ${fmt(weekGoal)} by Sunday.`}
+        </span>
+        <div
+          role="img"
+          aria-label={`Steps this week: ${sw.days.map((x) => `${format(parseISO(x.date), 'EEEE')} ${fmt(x.steps)}`).join(', ')}`}
+          style={{ position: 'relative', height: 110, display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 10, alignItems: 'end' }}
+        >
+          <div style={{ position: 'absolute', left: 0, right: 0, bottom: `${(profile.step_goal / chartMax) * 100}%`, borderTop: '1.5px dashed #b7c2b9' }}>
+            <span style={{ position: 'absolute', right: 0, top: -18, fontSize: 10, fontWeight: 700, color: 'var(--muted)' }}>{fmt(profile.step_goal)} avg</span>
+          </div>
+          {sw.days.map((x) => (
+            <div
+              key={x.date}
+              style={{
+                height: `${Math.max(2, (x.steps / chartMax) * 100)}%`,
+                borderRadius: '8px 8px 4px 4px',
+                background: x.date > today ? 'transparent' : x.steps >= profile.step_goal ? 'var(--steps)' : 'var(--steps-soft)',
+                transition: 'height 0.6s var(--ease)',
+              }}
+            />
+          ))}
+        </div>
+        <div aria-hidden="true" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 10, fontSize: 11, fontWeight: 600, color: 'var(--muted)', textAlign: 'center' }}>
+          {sw.days.map((x) => (
+            <span key={x.date} style={x.date === today ? { color: 'var(--ink)', fontWeight: 800 } : undefined}>
+              {format(parseISO(x.date), 'EEEEE')}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      <section className="card" style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <div className="row-text">
+          <span className="row-title">Water goal hit</span>
+          <span className="row-sub">Last 7 days</span>
+        </div>
+        <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--water)' }}>
+          {waterDays}
+          <span style={{ fontSize: 14, color: 'var(--muted)', fontWeight: 600 }}> / 7</span>
+        </span>
+      </section>
+
+      <span className="section-label with-note">
+        75 Hard
+        <span>
+          Attempt {attempt} · from {format(parseISO(challenge.start_date), 'd MMM')}
+        </span>
+      </span>
+      <ChallengeSection summary={summary} start={challenge.start_date} today={today} openDay={openDay} />
       {/* From day 2: the first finished day gives them something to add up. */}
-      {stats && stats.days > 1 && <SoFarCard s={stats} unit={unit} currentDay={summary.currentDay} />}
       {stats && stats.days > 1 && <HabitsSoFarCard s={stats} />}
+
+      {past.length > 0 && (
+        <>
+          <span className="section-label">Earlier attempts</span>
+          <section className="card list">
+            {past.map((c, i) => {
+              return (
+                <div className="row" key={c.id}>
+                  <div className="row-text">
+                    <span className="row-title">Attempt {history.indexOf(c) + 1 || past.length - i}</span>
+                    <span className="row-sub">
+                      {format(parseISO(c.start_date), 'd MMM')}
+                      {c.ended_on ? ` – ${format(parseISO(c.ended_on), 'd MMM')}` : ''}
+                    </span>
+                  </div>
+                  <span className={c.status === 'completed' ? 'chip' : 'chip warn'}>
+                    {c.status === 'completed' ? 'Finished' : 'Restarted'}
+                  </span>
+                </div>
+              );
+            })}
+          </section>
+        </>
+      )}
+      {recap && <RecapSheet open monday={recap} onClose={() => setRecap(null)} />}
+      {viewer && photos.length > 0 && (
+        <PhotoViewer
+          photos={photos}
+          startIndex={viewer.index}
+          startCompare={viewer.compare}
+          onClose={() => setViewer(null)}
+          onDelete={async (d) => {
+            try {
+              await removePhoto(d);
+            } catch (e) {
+              reportError(e);
+            }
+          }}
+        />
+      )}
+      <WeightSheet
+        open={weighing}
+        date={today}
+        isToday
+        current={typeof todayKg === 'number' ? todayKg : null}
+        last={lastBefore}
+        avg={trend.length ? trend[trend.length - 1].avg : null}
+        unit={unit}
+        onUnit={(u) => updateProfile({ weight_unit: u })}
+        onSave={(kg) => {
+          updateLog(today, (l) => ({ ...l, weight_kg: kg }));
+          setWeighing(false);
+        }}
+        onClose={() => setWeighing(false)}
+      />
+    </div>
+  );
+}
+
+/** The 75 Hard bits, kept at the bottom: where the challenge stands, and the calendar that opens any day. */
+function ChallengeSection({ summary, start, today, openDay }: { summary: ChallengeSummary; start: string; today: string; openDay: (date: string) => void }) {
+  const [monthPick, setMonthPick] = useState<number | null>(null);
+  const byDate = new Map(summary.timeline.map((t) => [t.date, t]));
+  const first = parseISO(summary.timeline[0]?.date ?? start);
+  const last = parseISO(summary.timeline[summary.timeline.length - 1]?.date ?? start);
+  const months: { key: string; title: string; cells: (string | null)[] }[] = [];
+  for (let m = startOfMonth(first); m <= last; m = addMonths(m, 1)) {
+    const lead = (getDay(m) + 6) % 7; // Monday-first
+    const days = Array.from({ length: getDaysInMonth(m) }, (_, i) => toISODate(addDays(m, i)));
+    const cells: (string | null)[] = [...Array(lead).fill(null), ...days];
+    // Keep only the weeks that touch the challenge.
+    const weeks: (string | null)[][] = [];
+    for (let w = 0; w < cells.length; w += 7) weeks.push(cells.slice(w, w + 7));
+    const kept = weeks.filter((wk) => wk.some((c) => c && byDate.has(c)));
+    if (kept.length) months.push({ key: toISODate(m), title: format(m, 'MMMM yyyy'), cells: kept.flat() });
+  }
+  // One month at a time, starting on this month.
+  const thisMonth = months.findIndex((m) => m.key === toISODate(startOfMonth(parseISO(today))));
+  const monthIdx = Math.min(months.length - 1, Math.max(0, monthPick ?? (thisMonth >= 0 ? thisMonth : today < months[0]?.key ? 0 : months.length - 1)));
+  const month = months[monthIdx];
+
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+        <Tile value={String(summary.completedDays)} label={summary.completedDays === 1 ? 'full day' : 'full days'} dark />
+        <Tile value={summary.currentDay ? `Day ${summary.currentDay}` : '–'} label={`of ${CHALLENGE_LENGTH}`} />
+        <Tile value={String(summary.remaining)} label={summary.remaining === 1 ? 'day to go' : 'days to go'} />
+      </div>
 
       <section className="card">
         <div className="card-head">
@@ -215,132 +352,7 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
           <Legend swatch={{ background: 'var(--line)' }} label="To come" />
         </div>
       </section>
-
-      <span className="section-label">Week by week</span>
-      <WeeklyProgress start={challenge.start_date} today={today} metrics={weeklyMetrics} />
-
-      <span className="section-label">Body</span>
-      <WeightCard logs={logs} unit={unit} today={today} onLog={() => setWeighing(true)} />
-
-      <PhotosCard
-        photos={photos}
-        onOpen={(index) => setViewer({ index, compare: false })}
-        onCompare={() => setViewer({ index: photos.length - 1, compare: true })}
-      />
-
-      <span className="section-label">Food & activity</span>
-      <CaloriesWeekCard logs={logs} profile={profile} today={today} />
-
-      <section className="card">
-        <div className="card-head" style={{ alignItems: 'baseline' }}>
-          <h2 className="card-title">Steps this week</h2>
-          <span className="card-sub">
-            <strong style={{ color: 'var(--ink)', fontSize: 15 }}>{fmt(sw.total)}</strong> / {fmt(weekGoal)}
-          </span>
-        </div>
-        <div style={{ height: 10, borderRadius: 5, background: 'var(--steps-tint)', overflow: 'hidden' }} aria-hidden="true">
-          <div style={{ height: '100%', width: `${Math.min(100, (sw.total / weekGoal) * 100)}%`, background: 'var(--steps)', borderRadius: 5, transition: 'width 0.6s var(--ease)' }} />
-        </div>
-        <span className="card-sub">
-          {sw.total >= weekGoal
-            ? 'Weekly goal hit. Nice.'
-            : `${fmt(perDayNeeded)} a day from here hits ${fmt(weekGoal)} by Sunday.`}
-        </span>
-        <div
-          role="img"
-          aria-label={`Steps this week: ${sw.days.map((x) => `${format(parseISO(x.date), 'EEEE')} ${fmt(x.steps)}`).join(', ')}`}
-          style={{ position: 'relative', height: 110, display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 10, alignItems: 'end' }}
-        >
-          <div style={{ position: 'absolute', left: 0, right: 0, bottom: `${(profile.step_goal / chartMax) * 100}%`, borderTop: '1.5px dashed #b7c2b9' }}>
-            <span style={{ position: 'absolute', right: 0, top: -18, fontSize: 10, fontWeight: 700, color: 'var(--muted)' }}>{fmt(profile.step_goal)} avg</span>
-          </div>
-          {sw.days.map((x) => (
-            <div
-              key={x.date}
-              style={{
-                height: `${Math.max(2, (x.steps / chartMax) * 100)}%`,
-                borderRadius: '8px 8px 4px 4px',
-                background: x.date > today ? 'transparent' : x.steps >= profile.step_goal ? 'var(--steps)' : 'var(--steps-soft)',
-                transition: 'height 0.6s var(--ease)',
-              }}
-            />
-          ))}
-        </div>
-        <div aria-hidden="true" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 10, fontSize: 11, fontWeight: 600, color: 'var(--muted)', textAlign: 'center' }}>
-          {sw.days.map((x) => (
-            <span key={x.date} style={x.date === today ? { color: 'var(--ink)', fontWeight: 800 } : undefined}>
-              {format(parseISO(x.date), 'EEEEE')}
-            </span>
-          ))}
-        </div>
-      </section>
-
-      <section className="card" style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <div className="row-text">
-          <span className="row-title">Water goal hit</span>
-          <span className="row-sub">Last 7 days</span>
-        </div>
-        <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--water)' }}>
-          {waterDays}
-          <span style={{ fontSize: 14, color: 'var(--muted)', fontWeight: 600 }}> / 7</span>
-        </span>
-      </section>
-
-      {past.length > 0 && (
-        <>
-          <span className="section-label">Earlier attempts</span>
-          <section className="card list">
-            {past.map((c, i) => {
-              return (
-                <div className="row" key={c.id}>
-                  <div className="row-text">
-                    <span className="row-title">Attempt {history.indexOf(c) + 1 || past.length - i}</span>
-                    <span className="row-sub">
-                      {format(parseISO(c.start_date), 'd MMM')}
-                      {c.ended_on ? ` – ${format(parseISO(c.ended_on), 'd MMM')}` : ''}
-                    </span>
-                  </div>
-                  <span className={c.status === 'completed' ? 'chip' : 'chip warn'}>
-                    {c.status === 'completed' ? 'Finished' : 'Restarted'}
-                  </span>
-                </div>
-              );
-            })}
-          </section>
-        </>
-      )}
-      {recap && <RecapSheet open monday={recap} onClose={() => setRecap(null)} />}
-      {viewer && photos.length > 0 && (
-        <PhotoViewer
-          photos={photos}
-          startIndex={viewer.index}
-          startCompare={viewer.compare}
-          onClose={() => setViewer(null)}
-          onDelete={async (d) => {
-            try {
-              await removePhoto(d);
-            } catch (e) {
-              reportError(e);
-            }
-          }}
-        />
-      )}
-      <WeightSheet
-        open={weighing}
-        date={today}
-        isToday
-        current={typeof todayKg === 'number' ? todayKg : null}
-        last={lastBefore}
-        avg={trend.length ? trend[trend.length - 1].avg : null}
-        unit={unit}
-        onUnit={(u) => updateProfile({ weight_unit: u })}
-        onSave={(kg) => {
-          updateLog(today, (l) => ({ ...l, weight_kg: kg }));
-          setWeighing(false);
-        }}
-        onClose={() => setWeighing(false)}
-      />
-    </div>
+    </>
   );
 }
 

@@ -155,7 +155,7 @@ describe('weekly report', () => {
     // Food was fully logged on only 3 of 7 days: the biggest gap
     expect(r.focus?.area).toBe('logging');
     expect(r.focus?.text).toBe('Food fully logged on 3 of 7 days (1 only partly). Logging straight after each meal keeps it quick: type it or snap a photo.');
-    expect(reportTeaser(r, 'lb')).toBe('Last week: 79% of tasks, down 1.0 lb');
+    expect(reportTeaser(r, 'lb')).toBe('Last week: 7h 30m of workouts, down 1.0 lb');
   });
 
   it('the week still going: today is "to do", not missed, and totals compare fairly', () => {
