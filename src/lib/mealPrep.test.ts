@@ -5,6 +5,13 @@ import {
   batchNutrition,
   canLog,
   formatPortions,
+  gramsEntry,
+  gramsLeft,
+  gramsNutrition,
+  gramsPerPortion,
+  parseCookedGrams,
+  per100Nutrition,
+  portionsIn,
   leftLabel,
   newMealPrep,
   portionEntry,
@@ -104,5 +111,64 @@ describe('a new batch', () => {
     const entry = { ...teriyaki[0], id: 'x', log_date: '2026-10-18', meal: 'dinner' as const, created_at: 'now' };
     const [ing] = asIngredients([entry]);
     expect(ing).toEqual(teriyaki[0]);
+  });
+});
+
+describe('logging by weight', () => {
+  // The teriyaki batch weighed 2,400 g cooked: 400 g a portion, 3569 kcal over 2400 g.
+  const weighed: MealPrep = { ...prep, cooked_grams: 2400 };
+
+  it('works out grams per portion and per 100 g', () => {
+    expect(gramsPerPortion(weighed)).toBe(400);
+    expect(gramsPerPortion(prep)).toBeNull();
+    expect(per100Nutrition(weighed)).toEqual({ kcal: 148.7, protein: 14.1, carbs: 16.5, fat: 2.7 });
+  });
+
+  it('logs 100 g of the whole dish with its share of everything', () => {
+    const e = gramsEntry(weighed, 100, 'lunch', '2026-11-20');
+    expect(e.unit).toBe('g');
+    expect(e.grams).toBe(100);
+    expect(e.kcal).toBe(149);
+    expect(e.protein_g).toBe(14.1);
+    expect(prepIdOf(e)).toBe('p1');
+    expect(amountText(e)).toBe('100 g');
+    expect(portionsIn(e)).toBeCloseTo(0.25);
+    expect(gramsNutrition(weighed, 100)?.kcal).toBe(149);
+    expect(() => gramsEntry(prep, 100, 'lunch', '2026-11-20')).toThrow('Weigh');
+  });
+
+  it('logs a portion of a weighed batch with its grams, and can switch to grams later', () => {
+    const one = portionEntry(weighed, 1, 'dinner', '2026-11-20');
+    expect(one.grams).toBe(400);
+    expect(one.kcal).toBe(595);
+    expect(portionsIn(one)).toBe(1);
+    const asGrams = withAmount(one, 200, 'g');
+    expect(asGrams.kcal).toBe(297);
+    expect(portionsIn(asGrams)).toBeCloseTo(0.5);
+  });
+
+  it('counts grams down as a share of a portion, and says what is left in grams', () => {
+    const after = withPortionsLeft(weighed, 0.25);
+    expect(after.portions_left).toBe(5.75);
+    expect(gramsLeft(after)).toBe(2300);
+    expect(leftLabel(after)).toBe('2,300 g of 2,400 g left');
+    expect(leftLabel({ ...prep, portions_left: 5.67 })).toBe('≈5½ of 6 left');
+    expect(withPortionsLeft({ ...weighed, portions_left: 0.004 }, 0).portions_left).toBe(0);
+    // 100 g out of a 1,200 g batch in 4 leaves 1,100 g, not 1,101 g
+    const bake: MealPrep = { ...prep, portions: 4, portions_left: 4, cooked_grams: 1200 };
+    const ate = gramsEntry(bake, 100, 'lunch', '2026-11-20');
+    const left = withPortionsLeft(bake, portionsIn(ate));
+    expect(gramsLeft(left)).toBe(1100);
+    expect(leftLabel(left, { short: true })).toBe('1,100 g left');
+  });
+
+  it('checks the cooked weight', () => {
+    expect(parseCookedGrams('')).toBeNull();
+    expect(parseCookedGrams(' 1200,4 ')).toBe(1200);
+    expect(() => parseCookedGrams('0')).toThrow('weight');
+    expect(() => parseCookedGrams('abc')).toThrow('weight');
+    const p = newMealPrep({ name: 'A', items: teriyaki, portions: 4, madeOn: '2026-11-20', cookedGrams: 1200 });
+    expect(p.cooked_grams).toBe(1200);
+    expect(newMealPrep({ name: 'A', items: teriyaki, portions: 4, madeOn: '2026-11-20' })).not.toHaveProperty('cooked_grams');
   });
 });

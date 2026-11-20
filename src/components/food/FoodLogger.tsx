@@ -30,7 +30,7 @@ import { FoodThumb, MacroLine, g1 } from './bits';
 import { MealIcon, PrepIcon } from './MealIcon';
 import { PortionPicker } from './QuickLog';
 import { copyEntries, yourUsual, type Suggestion } from '../../lib/usual';
-import { canLog, leftLabel, portionNutrition } from '../../lib/mealPrep';
+import { canLog, gramsLeft, gramsNutrition, gramsPerPortion, leftLabel, portionNutrition, prepIdOf } from '../../lib/mealPrep';
 import { addDays as addIsoDays } from '../../lib/weeks';
 
 export type LoggerMode = 'search' | 'scan' | 'describe' | 'quick';
@@ -274,7 +274,14 @@ export function FoodLogger({
   const mealEmpty = !food.entriesFor(date).some((e) => e.meal === meal);
   const usual = !collect && mealEmpty ? yourUsual(history, { date, meal }) : null;
   const preps = collect ? [] : food.mealPreps.filter((p) => p.portions_left > 0);
-  async function logPrep(prep: MealPrep, size: number) {
+  // The grams she had last time, per batch, to start the grams box with.
+  const prepGrams: Record<string, number> = {};
+  if (!collect)
+    for (const e of [...history].reverse().concat(food.entriesFor(date))) {
+      const id = prepIdOf(e);
+      if (id && e.unit === 'g' && e.amount > 0) prepGrams[id] = e.amount;
+    }
+  async function logPrep(prep: MealPrep, size: number | { grams: number }) {
     tap();
     const entries = await food.logPrep(prep, size, date, meal).catch(() => null);
     if (!entries) return;
@@ -337,6 +344,7 @@ export function FoodLogger({
             usual={usual}
             onUsual={() => usual && logNow(copyEntries(usual.entries, date, meal), `${usual.title} · ${fmt(usual.kcal)} kcal`)}
             preps={preps}
+            prepGrams={prepGrams}
             onPrep={logPrep}
             onOpen={openFood}
             onQuick={quickLog}
@@ -537,6 +545,7 @@ function Home({
   usual,
   onUsual,
   preps,
+  prepGrams,
   onPrep,
 }: {
   query: string;
@@ -562,7 +571,9 @@ function Home({
   usual: Suggestion | null;
   onUsual: () => void;
   preps: MealPrep[];
-  onPrep: (prep: MealPrep, size: number) => void;
+  /** Grams she last had of each batch (by id), when she logged it by weight. */
+  prepGrams: Record<string, number>;
+  onPrep: (prep: MealPrep, size: number | { grams: number }) => void;
 }) {
   const q = query.trim();
   const [products, setProducts] = useState<{ q: string; foods: Food[]; error?: boolean } | null>(null);
@@ -701,7 +712,7 @@ function Home({
       {!q && preps.length > 0 && (
         <Group label="Your meal prep">
           {preps.map((p) => (
-            <PrepLine key={p.id} prep={p} onLog={onPrep} />
+            <PrepLine key={p.id} prep={p} lastGrams={prepGrams[p.id]} onLog={onPrep} />
           ))}
         </Group>
       )}
@@ -794,11 +805,25 @@ function Home({
   );
 }
 
-/** A meal-prep batch: how many portions are left, ½ · 1 · 1½, and "+" to log. */
-function PrepLine({ prep, onLog }: { prep: MealPrep; onLog: (prep: MealPrep, size: number) => void }) {
-  const [size, setSize] = useState(prep.portions_left >= 1 ? 1 : 0.5);
-  const ok = canLog(prep, size);
-  const kcal = Math.round(portionNutrition(prep).kcal * size);
+/**
+ * A meal-prep batch: what's left, ½ · 1 · 1½ portions, and "+" to log. A weighed batch can also
+ * be logged by the gram ("100 g of the whole dish"), with calories and macros worked out from it.
+ */
+function PrepLine({ prep, lastGrams, onLog }: { prep: MealPrep; lastGrams?: number; onLog: (prep: MealPrep, size: number | { grams: number }) => void }) {
+  const gpp = gramsPerPortion(prep);
+  const [size, setSize] = useState(prep.portions_left >= 0.99 ? 1 : 0.5);
+  const [byWeight, setByWeight] = useState(!!gpp); // she weighed it, so grams is what she'll want
+  // Start with what she had last time, else a portion's worth (or what's left, if less).
+  const [gramsText, setGramsText] = useState(() =>
+    String(lastGrams ? Math.round(lastGrams) : gpp ? Math.max(10, Math.round(Math.min(gpp, gramsLeft(prep) ?? gpp) / 10) * 10) : 100),
+  );
+  const grams = Number(gramsText.replace(',', '.'));
+  const weighing = !!gpp && byWeight;
+  const n = weighing ? gramsNutrition(prep, grams) : null;
+  const each = portionNutrition(prep);
+  const ok = weighing ? grams > 0 && grams <= 5000 : canLog(prep, size);
+  const kcal = weighing ? n?.kcal ?? 0 : Math.round(each.kcal * size);
+  const r = (v: number | null) => (v == null ? null : v * size);
   return (
     <div className="food-line prep-line">
       <PrepIcon size={40} />
@@ -807,9 +832,42 @@ function PrepLine({ prep, onLog }: { prep: MealPrep; onLog: (prep: MealPrep, siz
         <span className="row-sub">
           {leftLabel(prep)} · {fmt(kcal)} kcal
         </span>
-        <PortionPicker value={size} onChange={setSize} label={`Portion size for ${prep.name}`} />
+        {weighing && n ? <MacroLine p={n.protein} c={n.carbs} f={n.fat} /> : <MacroLine p={r(each.protein)} c={r(each.carbs)} f={r(each.fat)} />}
+        <span className={`prep-line-controls${gpp ? ' stacked' : ''}`}>
+          {gpp && (
+            <span className="segmented segmented-sm" role="group" aria-label={`Log ${prep.name} by`}>
+              <button type="button" aria-pressed={byWeight} onClick={() => (tap(), setByWeight(true))}>
+                Grams
+              </button>
+              <button type="button" aria-pressed={!byWeight} onClick={() => (tap(), setByWeight(false))}>
+                Portions
+              </button>
+            </span>
+          )}
+          {weighing ? (
+            <span className="grams-input grams-input-sm">
+              <input
+                className="input"
+                inputMode="decimal"
+                aria-label={`Grams of ${prep.name}`}
+                value={gramsText}
+                onChange={(e) => setGramsText(e.target.value.replace(/[^\d.,]/g, ''))}
+                onFocus={(e) => e.target.select()}
+              />
+              <span aria-hidden="true">g</span>
+            </span>
+          ) : (
+            <PortionPicker value={size} onChange={setSize} label={`Portion size for ${prep.name}`} />
+          )}
+        </span>
       </span>
-      <button type="button" className="add-btn" disabled={!ok} aria-label={`Log ${size} ${size <= 1 ? 'portion' : 'portions'} of ${prep.name}`} onClick={() => onLog(prep, size)}>
+      <button
+        type="button"
+        className="add-btn"
+        disabled={!ok}
+        aria-label={weighing ? `Log ${Math.round(grams)} g of ${prep.name}` : `Log ${size} ${size <= 1 ? 'portion' : 'portions'} of ${prep.name}`}
+        onClick={() => onLog(prep, weighing ? { grams } : size)}
+      >
         <IconPlus size={20} strokeWidth={2.6} />
       </button>
     </div>

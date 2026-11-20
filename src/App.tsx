@@ -53,7 +53,11 @@ function Main() {
 
   // Roll over to the new day if the app was left open past midnight.
   useEffect(() => setDate(today), [today]);
-  useEffect(() => window.scrollTo({ top: 0 }), [tab, date]);
+  // Braces matter: newer browsers return a promise from scrollTo, and an effect that returns
+  // anything but a cleanup function makes React throw (a blank screen on the next tab change).
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [tab, date]);
   useEffect(() => {
     const green = status === 'loading' || status === 'signedOut' || (status === 'ready' && tab === 'today');
     setStatusBar(green ? 'green' : 'light');

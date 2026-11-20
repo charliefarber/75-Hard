@@ -213,6 +213,9 @@ const missingColumn = (err: DbError | null) => !!err && (err.code === '42703' ||
 const MEAL_PREP_SETUP =
   'Meal prep isn’t set up in the database yet. In Supabase’s SQL Editor, run supabase/migrations/0016_meal_prep.sql, then try again.';
 
+const MEAL_PREP_WEIGHT_SETUP =
+  'Logging meal prep by weight needs a quick database update. In Supabase’s SQL Editor, run supabase/migrations/0017_meal_prep_weight.sql, then try again.';
+
 function check<T>(res: { data: T; error: DbError | null }): T {
   if (res.error) throw dbError(res.error);
   return res.data;
@@ -486,13 +489,25 @@ export class SupabaseRepo implements Repo {
   async getMealPreps() {
     const res = await this.sb.from('meal_preps').select('*').eq('user_id', this.uid()).order('created_at', { ascending: false });
     if (missingTable(res.error)) return []; // migration 0016 not run yet: nothing to show
-    return (check(res) as MealPrep[]).map((p) => ({ ...p, portions: Number(p.portions), portions_left: Number(p.portions_left) }));
+    return (check(res) as MealPrep[]).map((p) => ({
+      ...p,
+      portions: Number(p.portions),
+      portions_left: Number(p.portions_left),
+      cooked_grams: p.cooked_grams == null ? null : Number(p.cooked_grams),
+    }));
   }
 
   async saveMealPrep(p: MealPrep) {
-    const { id, name, items, portions, portions_left, made_on } = p;
-    const res = await this.sb.from('meal_preps').upsert({ id, user_id: this.uid(), name, items, portions, portions_left, made_on }, { onConflict: 'id' });
+    const { id, name, items, portions, portions_left, made_on, cooked_grams } = p;
+    const row = { id, user_id: this.uid(), name, items, portions, portions_left, made_on };
+    const res = await this.sb.from('meal_preps').upsert({ ...row, cooked_grams: cooked_grams ?? null }, { onConflict: 'id' });
     if (missingTable(res.error)) throw new Error(MEAL_PREP_SETUP);
+    // Before migration 0017 there's no weight column: a batch without a weight still saves.
+    if (missingColumn(res.error)) {
+      if (cooked_grams != null) throw new Error(MEAL_PREP_WEIGHT_SETUP);
+      check(await this.sb.from('meal_preps').upsert(row, { onConflict: 'id' }));
+      return;
+    }
     check(res);
   }
 
