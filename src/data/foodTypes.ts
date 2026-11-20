@@ -101,15 +101,17 @@ export interface SavedMeal {
   slots?: Meal[] | null;
 }
 
-/** A batch she cooked (meal prep): what went in, split into equal portions that count down as she eats them. */
+/** A batch she cooked (meal prep): what went in, split into equal portions (or weighed) that count down as she eats them. */
 export interface MealPrep {
   id: string;
   name: string;
   items: SavedMeal['items'];
   /** How many portions the batch was split into. */
   portions: number;
-  /** Portions not eaten yet (can be a half). */
+  /** Portions not eaten yet (a half, or any fraction once she logs by weight). */
   portions_left: number;
+  /** What the whole batch weighed once cooked, so she can log it by the gram. */
+  cooked_grams?: number | null;
   /** The day it was made, yyyy-MM-dd. */
   made_on: string;
   created_at?: string;

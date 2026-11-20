@@ -81,7 +81,7 @@ export function TodayFood({
       <div className="meal-rows">
         {MEALS.map((m) => {
           const list = meals[m.id];
-          const kcal = totals(list).kcal;
+          const mt = totals(list);
           return (
             <div key={m.id} className={`meal-row${usual && usual.meal === m.id && !list.length ? ' has-usual' : ''}`}>
               <button type="button" className="meal-row-main" onClick={() => (tap(), list.length ? onOpen() : onAdd(m.id))}>
@@ -89,8 +89,9 @@ export function TodayFood({
                 <span className="row-text">
                   <span className="row-title">{m.label}</span>
                   <span className="row-sub">{list.length ? list.map((e) => e.name).join(', ') : 'Nothing yet'}</span>
+                  {list.length > 0 && <MacroLine p={mt.protein} c={mt.carbs} f={mt.fat} />}
                 </span>
-                {list.length > 0 && <span className="meal-row-kcal">{fmt(kcal)}</span>}
+                {list.length > 0 && <span className="meal-row-kcal">{fmt(mt.kcal)}</span>}
               </button>
               <button type="button" className="add-btn" aria-label={`Add to ${m.label.toLowerCase()}`} onClick={() => (tap(), onAdd(m.id))}>
                 <IconPlus size={20} strokeWidth={2.6} />

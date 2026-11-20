@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FoodEntry, Meal, MealPrep } from '../../data/foodTypes';
 import { MEALS } from '../../data/foodTypes';
 import { useFood } from '../../data/FoodData';
-import { asIngredients, batchNutrition, MAX_PORTIONS, newMealPrep, portionNutrition } from '../../lib/mealPrep';
+import { asIngredients, batchNutrition, MAX_PORTIONS, newMealPrep, parseCookedGrams, per100Nutrition, portionNutrition } from '../../lib/mealPrep';
 import { amountText, mealForTime, mealLabel } from '../../lib/nutrition';
 import { success, tap } from '../../lib/haptics';
 import { Sheet, Stepper, ToggleRow, fmt } from '../ui';
@@ -12,7 +12,8 @@ import { FoodThumb, MacroLine } from './bits';
 
 /**
  * A new meal prep: add everything that went into the batch (search, scan, photo or quick add,
- * the same as logging food), split it into portions, and optionally log one straight away.
+ * the same as logging food), split it into portions, optionally weigh it so it can be logged by
+ * the gram, and optionally log a portion straight away.
  * While she's adding ingredients this sheet steps aside for the food logger, then comes back.
  */
 export function MealPrepSheet({
@@ -31,6 +32,7 @@ export function MealPrepSheet({
   const [name, setName] = useState('');
   const [items, setItems] = useState<FoodEntry[]>([]);
   const [portions, setPortions] = useState(4);
+  const [cooked, setCooked] = useState('');
   const [logNow, setLogNow] = useState(true);
   const [meal, setMeal] = useState<Meal>('dinner');
   const [adding, setAdding] = useState(false);
@@ -44,6 +46,7 @@ export function MealPrepSheet({
     setName('');
     setItems([]);
     setPortions(4);
+    setCooked('');
     setLogNow(true);
     setMeal(now === 'lunch' || now === 'dinner' ? now : 'dinner');
     setAdding(false);
@@ -53,13 +56,22 @@ export function MealPrepSheet({
 
   const batch = batchNutrition(items);
   const each = items.length ? portionNutrition({ items, portions }) : null;
+  let cookedGrams: number | null = null;
+  let cookedError: string | null = null;
+  try {
+    cookedGrams = parseCookedGrams(cooked);
+  } catch (e) {
+    cookedError = e instanceof Error ? e.message : String(e);
+  }
+  const per100 = cookedGrams ? per100Nutrition({ items, cooked_grams: cookedGrams }) : null;
   const ready = items.length > 0 && name.trim().length > 0 && !saving;
 
   async function save() {
     setError(null);
     let prep: MealPrep;
     try {
-      prep = newMealPrep({ name, items: asIngredients(items), portions, madeOn: date });
+      if (cookedError) throw new Error(cookedError);
+      prep = newMealPrep({ name, items: asIngredients(items), portions, madeOn: date, cookedGrams });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       return;
@@ -122,6 +134,25 @@ export function MealPrepSheet({
               <MacroLine p={batch.protein} c={batch.carbs} f={batch.fat} />
             </div>
 
+            <label className="prep-split prep-weigh">
+              <span className="row-text">
+                <span className="row-title">Cooked weight</span>
+                <span className="row-sub">Optional. Weigh the whole dish to log it by the gram</span>
+              </span>
+              <span className="grams-input">
+                <input
+                  className="input"
+                  inputMode="decimal"
+                  placeholder="e.g. 1200"
+                  aria-label="Cooked weight of the whole batch, in grams"
+                  value={cooked}
+                  onChange={(e) => setCooked(e.target.value.replace(/[^\d.,]/g, ''))}
+                />
+                <span aria-hidden="true">g</span>
+              </span>
+            </label>
+            {cookedError && cooked.trim() && <p className="card-sub field-error">{cookedError}</p>}
+
             <div className="prep-split">
               <span className="row-text">
                 <span className="row-title">Split into</span>
@@ -136,6 +167,11 @@ export function MealPrepSheet({
                 <strong>{fmt(each.kcal)}</strong> kcal
               </span>
               <MacroLine p={each.protein} c={each.carbs} f={each.fat} />
+              {cookedGrams && per100 && (
+                <span className="prep-portion-weight">
+                  About {fmt(Math.round(cookedGrams / portions))} g each · 100 g is {fmt(Math.round(per100.kcal))} kcal
+                </span>
+              )}
             </div>
 
             <ToggleRow title="Log one portion now" sub={logNow ? `Adds it to ${mealLabel(meal).toLowerCase()} today` : 'Keep them all for later'} checked={logNow} onChange={setLogNow} />

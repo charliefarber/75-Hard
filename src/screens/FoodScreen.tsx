@@ -11,12 +11,12 @@ import { useMinuteTick } from '../lib/useMinuteTick';
 import { FoodGoalsSheet } from '../components/food/GoalsSheet';
 import { amountText, byMeal, macroGoals, mealForTime, mealsWithFood, totals } from '../lib/nutrition';
 import { copyEntries, goToFoods, sameAsYesterday, signatureOf, yourUsual, type Suggestion } from '../lib/usual';
-import { leftLabel, portionNutrition } from '../lib/mealPrep';
+import { canLog, gramsNutrition, gramsPerPortion, leftLabel, parseCookedGrams, portionLabel, portionNutrition, prepIdOf } from '../lib/mealPrep';
 import { addDays as addIsoDays } from '../lib/weeks';
 import { Ring, Sheet, Toast, fmt } from '../components/ui';
 import { IconCamera, IconCheck, IconChevron, IconChevronLeft, IconPlus, IconSearch } from '../components/Icons';
 import { FoodLogger, type LoggerMode } from '../components/food/FoodLogger';
-import { FoodThumb, MacroBars } from '../components/food/bits';
+import { FoodThumb, MacroBars, MacroLine } from '../components/food/bits';
 import { MealIcon, PrepIcon } from '../components/food/MealIcon';
 import { MealSuggestions, type QuickOption } from '../components/food/QuickLog';
 import { MealPrepSheet } from '../components/food/MealPrepSheet';
@@ -37,6 +37,7 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
   const photoInput = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState<null | { meal: Meal; name: string; off: string[]; slots: Meal[] }>(null);
   const [prepOpen, setPrepOpen] = useState(false);
+  const [weighing, setWeighing] = useState<null | { prep: MealPrep; text: string; error?: string }>(null);
   const [toast, setToast] = useState<null | { message: string; undo?: () => void }>(null);
   const closeToast = useCallback(() => setToast(null), []);
   const yesterday = toISODate(addDays(parseISO(date), -1));
@@ -88,9 +89,14 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
     const logged = await food.logMeal(m, date, meal).catch(() => null);
     if (logged) done(m.name, logged);
   };
-  const logPortion = async (p: MealPrep, meal: Meal) => {
-    const logged = await food.logPrep(p, 1, date, meal).catch(() => null);
-    if (logged) done(`${p.name}, 1 portion`, logged);
+  const logPortion = async (p: MealPrep, meal: Meal, size: number | { grams: number } = 1) => {
+    const logged = await food.logPrep(p, size, date, meal).catch(() => null);
+    if (logged) done(`${p.name}, ${typeof size === 'number' ? portionLabel(size) : `${fmt(Math.round(size.grams))} g`}`, logged);
+  };
+  /** How she last had a batch: by the gram (that many grams again) or a portion. */
+  const lastPrepAmount = (p: MealPrep): number | { grams: number } => {
+    const last = [...entries].reverse().find((e) => prepIdOf(e) === p.id) ?? history.find((e) => prepIdOf(e) === p.id);
+    return last && last.unit === 'g' && gramsPerPortion(p) && last.amount > 0 ? { grams: last.amount } : 1;
   };
   const clip = (t: string, n = 26) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
   const suggestionsFor = (meal: Meal): { usual: Suggestion | null; options: QuickOption[] } => {
@@ -100,8 +106,14 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
     if (y && y.signature !== usual?.signature)
       options.push({ key: 'yesterday', label: 'Same as yesterday', sub: `${clip(y.title)} · ${fmt(y.kcal)}`, onLog: () => logCopies(y.entries, meal, `Same as yesterday’s ${meal}`) });
     if (meal === 'lunch' || meal === 'dinner')
-      for (const p of food.mealPreps.filter((x) => x.portions_left >= 1))
-        options.push({ key: `prep-${p.id}`, label: p.name, sub: `1 portion · ${fmt(portionNutrition(p).kcal)} · ${leftLabel(p)}`, onLog: () => logPortion(p, meal) });
+      for (const p of food.mealPreps.filter((x) => (gramsPerPortion(x) ? x.portions_left > 0 : canLog(x, 1)))) {
+        const size = lastPrepAmount(p);
+        const sub =
+          typeof size === 'number'
+            ? `1 portion · ${fmt(portionNutrition(p).kcal)} · ${leftLabel(p, { short: true })}`
+            : `${fmt(Math.round(size.grams))} g · ${fmt(gramsNutrition(p, size.grams)?.kcal ?? 0)} · ${leftLabel(p, { short: true })}`;
+        options.push({ key: `prep-${p.id}`, label: p.name, sub, onLog: () => logPortion(p, meal, size) });
+      }
     for (const m of food.savedMeals.filter((x) => x.slots?.includes(meal)).slice(0, 3))
       options.push({ key: `meal-${m.id}`, label: m.name, sub: `Saved meal · ${fmt(Math.round(totals(m.items).kcal))}`, onLog: () => logSaved(m, meal) });
     // Go-to snacks, skipping any food already offered above on its own
@@ -209,9 +221,12 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
           <section key={m.id} className="card meal-card" aria-labelledby={`meal-${m.id}`}>
             <div className="meal-head">
               <MealIcon meal={m.id} size={36} />
-              <h2 className="card-title" id={`meal-${m.id}`}>
-                {m.label}
-              </h2>
+              <span className="meal-head-text">
+                <h2 className="card-title" id={`meal-${m.id}`}>
+                  {m.label}
+                </h2>
+                {list.length > 0 && <MacroLine p={mt.protein} c={mt.carbs} f={mt.fat} />}
+              </span>
               <span className="meal-kcal">{list.length ? `${fmt(mt.kcal)} kcal` : ''}</span>
               <button type="button" className="add-btn" aria-label={`Add to ${m.label.toLowerCase()}`} onClick={() => (tap(), setLogger({ meal: m.id, mode: 'search' }))}>
                 <IconPlus size={20} strokeWidth={2.6} />
@@ -225,6 +240,7 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
                     <span className="row-text">
                       <span className="row-title">{e.name}</span>
                       <span className="row-sub">{[amountText(e), e.brand].filter(Boolean).join(' · ')}</span>
+                      <MacroLine p={e.protein_g} c={e.carbs_g} f={e.fat_g} />
                     </span>
                     <span className="entry-kcal">{fmt(Math.round(e.kcal))}</span>
                   </button>
@@ -232,10 +248,33 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
               </div>
             )}
             {sug && <MealSuggestions usual={sug.usual} onUsual={() => sug.usual && logCopies(sug.usual.entries, m.id, `Your usual ${m.label.toLowerCase()}`)} options={sug.options} />}
-            {list.length >= 2 && (
-              <button type="button" className="link-btn save-meal" onClick={() => setSaving({ meal: m.id, name: `My ${m.label.toLowerCase()}`, off: [], slots: [m.id] })}>
-                Save as a meal
-              </button>
+            {(list.length >= 2 || (list.length > 0 && !isToday)) && (
+              <div className="meal-actions">
+                {list.length >= 2 && (
+                  <button type="button" className="link-btn save-meal" onClick={() => setSaving({ meal: m.id, name: `My ${m.label.toLowerCase()}`, off: [], slots: [m.id] })}>
+                    Save as a meal
+                  </button>
+                )}
+                {!isToday && (
+                  <button
+                    type="button"
+                    className="link-btn save-meal"
+                    onClick={async () => {
+                      tap();
+                      const copies = copyEntries(list, today, m.id);
+                      try {
+                        await food.ensure(today, today); // today's diary in hand, so its total stays right
+                        await food.add(copies);
+                        done(`${m.label} copied to today`, copies);
+                      } catch {
+                        /* already reported */
+                      }
+                    }}
+                  >
+                    Log again today
+                  </button>
+                )}
+              </div>
             )}
           </section>
         );
@@ -260,8 +299,12 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
                   <span className="row-title">{p.name}</span>
                   <span className={`row-sub${p.portions_left <= 0 ? ' done' : ''}`}>
                     {leftLabel(p)} · {fmt(portionNutrition(p).kcal)} kcal a portion
+                    {gramsPerPortion(p) ? ` (${fmt(Math.round(gramsPerPortion(p)!))} g)` : ''}
                   </span>
                 </span>
+                <button type="button" className="link-btn" onClick={() => (tap(), setWeighing({ prep: p, text: p.cooked_grams ? String(p.cooked_grams) : '' }))}>
+                  {p.cooked_grams ? 'Weight' : 'Weigh'}
+                </button>
                 <button
                   type="button"
                   className="link-btn"
@@ -277,7 +320,7 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
             ))}
           </div>
         ) : (
-          <p className="card-sub prep-empty">Cooked a batch? Add everything that went in, split it into portions, then log a portion in one tap.</p>
+          <p className="card-sub prep-empty">Cooked a batch? Add everything that went in, split it into portions (or weigh it), then log a portion or a few grams in one tap.</p>
         )}
       </section>
 
@@ -294,6 +337,57 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
           );
         }}
       />
+
+      <Sheet open={!!weighing} onClose={() => setWeighing(null)} title="Cooked weight">
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!weighing) return;
+            let grams: number | null;
+            try {
+              grams = parseCookedGrams(weighing.text);
+            } catch (err) {
+              setWeighing({ ...weighing, error: err instanceof Error ? err.message : String(err) });
+              return;
+            }
+            try {
+              await food.weighMealPrep(weighing.prep.id, grams);
+            } catch {
+              return; // already reported
+            }
+            success();
+            setWeighing(null);
+            setToast({ message: grams ? `${weighing.prep.name} can be logged by the gram now` : `Weight removed from ${weighing.prep.name}` });
+          }}
+          style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
+        >
+          <p className="card-sub" style={{ margin: 0 }}>
+            Weigh the whole {weighing?.prep.name ?? 'batch'} once it’s cooked (the full amount you made, without the dish). Then you can log it by the gram and the calories and macros are worked out for you.
+          </p>
+          <label className="field">
+            Whole batch, cooked
+            <span className="grams-input">
+              <input
+                className="input"
+                autoFocus
+                inputMode="decimal"
+                placeholder="e.g. 1200"
+                value={weighing?.text ?? ''}
+                onChange={(e) => setWeighing((w) => (w ? { ...w, text: e.target.value.replace(/[^\d.,]/g, ''), error: undefined } : w))}
+              />
+              <span aria-hidden="true">g</span>
+            </span>
+          </label>
+          {weighing?.error && (
+            <p className="note-card" role="alert">
+              {weighing.error}
+            </p>
+          )}
+          <button type="submit" className="btn btn-primary btn-block">
+            {weighing?.text.trim() ? 'Save weight' : weighing?.prep.cooked_grams ? 'Remove weight' : 'Save'}
+          </button>
+        </form>
+      </Sheet>
 
       <FoodLogger
         open={!!logger}
