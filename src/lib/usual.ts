@@ -27,13 +27,13 @@ export interface Suggestion {
 const CARRIED_OVER = new Set(['Logged in Lifesum', 'Calories typed in earlier']);
 
 /** Entries worth suggesting again. */
-function suggestable(e: FoodEntry): boolean {
+export function suggestable(e: FoodEntry): boolean {
   if (e.food_key?.startsWith('prep:')) return false;
   if (!e.food_key && CARRIED_OVER.has(e.name)) return false;
   return true;
 }
 
-const keyOf = (e: FoodEntry) => e.food_key ?? `name:${e.name.trim().toLowerCase()}`;
+export const keyOf = (e: FoodEntry) => e.food_key ?? `name:${e.name.trim().toLowerCase()}`;
 
 export function signatureOf(entries: FoodEntry[]): string {
   return [...new Set(entries.map(keyOf))].sort().join('|');

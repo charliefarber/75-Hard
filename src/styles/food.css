@@ -357,3 +357,31 @@
 .order-part:not(.on) .order-part-kcal { color: var(--green-ink); }
 .ai-log.known { background: linear-gradient(135deg, #e3f4e8 0%, #eef8f1 100%); box-shadow: inset 0 0 0 1.5px var(--mint-soft); }
 .ai-log.known .ai-log-icon { color: var(--green); }
+
+/* ---------- Food patterns: the last four weeks on today's diary (components/food/Patterns.tsx) ---------- */
+
+.pat-card {
+  --meal-breakfast: #eda100; --meal-lunch: #1f8a4c; --meal-dinner: #6142b0; --meal-snacks: #d96b1e;
+  gap: 12px;
+}
+.pat-sub { margin: 0; font-size: 12px; font-weight: 700; color: var(--muted); }
+.pat-split { display: flex; flex-direction: column; gap: 10px; }
+.pat-bar { display: flex; gap: 2px; height: 28px; border-radius: 8px; overflow: hidden; }
+.pat-seg { flex: 1 1 0; min-width: 4px; }
+.pat-card .m-breakfast { background: var(--meal-breakfast); }
+.pat-card .m-lunch { background: var(--meal-lunch); }
+.pat-card .m-dinner { background: var(--meal-dinner); }
+.pat-card .m-snacks { background: var(--meal-snacks); }
+.pat-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.pat-legend li { display: flex; flex-wrap: wrap; align-items: center; column-gap: 10px; font-size: 14px; }
+.pat-key { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.pat-name { font-weight: 700; white-space: nowrap; }
+.pat-name b { font-weight: 800; color: var(--ink-2); margin-left: 2px; }
+.pat-val { margin-left: auto; font-size: 13px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.pat-note { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-2); }
+.pat-note span { color: var(--muted); }
+.pat-often { display: flex; flex-direction: column; gap: 4px; padding-top: 2px; }
+.pat-row { display: flex; align-items: center; gap: 12px; padding: 7px 16px; position: relative; }
+.pat-row + .pat-row::before { content: ''; position: absolute; left: 64px; right: 16px; top: 0; height: 1px; background: var(--line); }
+.pat-row .row-text { flex: 1; min-width: 0; }
+.pat-row .row-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
