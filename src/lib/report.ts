@@ -5,6 +5,7 @@ import { workoutGoal } from '../data/types';
 import { bodyStats, entryName, kgToLb, weighIns, weightTrend } from './body';
 import { taskStatuses, toISODate, type ChallengeSummary, type TaskId, type TimelineDay } from './challenge';
 import { dayEnergy } from './energy';
+import { durationText } from './fitness';
 import { macroGoals, mealsWithFood, totals, type MacroGoals } from './nutrition';
 import { mondayOf, weekRecap, type WeekRecap } from './recap';
 
@@ -588,11 +589,14 @@ export function weekReport(monday: string, input: ReportInput): WeekReport {
 }
 
 /** One line for the "Weekly report" button: last week's headline and the number that matters most. */
+/** One line for the Progress tab: training first, then weight if it moved (or steps if it didn't). */
 export function reportTeaser(r: WeekReport, unit: WeightUnit): string {
-  const bits = [`${Math.round(r.recap.taskShare * 100)}% of tasks`];
+  const a = r.activity;
+  const bits: string[] = [];
+  if (a.minutes > 0) bits.push(`${durationText(a.minutes)} of workouts`);
   if (r.weight?.change != null && Math.abs(r.weight.change) >= 0.09) bits.push(`${r.weight.change < 0 ? 'down' : 'up'} ${weightAmount(r.weight.change, unit)}`);
-  else if (r.recap.completed) bits.push(`${r.recap.completed} full ${plural(r.recap.completed, 'day')}`);
-  return `${r.current ? 'This week so far' : 'Last week'}: ${bits.join(', ')}`;
+  else if (a.steps > 0) bits.push(`${num(a.steps)} steps`);
+  return `${r.current ? 'This week so far' : 'Last week'}: ${bits.join(', ') || 'nothing logged yet'}`;
 }
 
 // ---------------------------------------------------------------- the challenge so far
