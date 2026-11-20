@@ -4,8 +4,10 @@ import { addDays, addMonths, format, getDay, getDaysInMonth, parseISO, startOfMo
 import { useApp } from '../data/AppData';
 import { CHALLENGE_LENGTH, isDayComplete, summarise, toISODate, weekSteps } from '../lib/challenge';
 import { fmt } from '../components/ui';
-import { RecapSheet } from '../components/Recap';
-import { mondayOf } from '../lib/recap';
+import { RecapSheet, reportWeek, useReportInput } from '../components/Recap';
+import { HabitsSoFarCard, SoFarCard } from '../components/SoFar';
+import { challengeStats, dailySeries, reportTeaser, weekReport } from '../lib/report';
+import { macroGoals } from '../lib/nutrition';
 import { IconCalendarCheck, IconChevron, IconChevronLeft } from '../components/Icons';
 import { CaloriesWeekCard } from '../components/CaloriesWeek';
 import { tap } from '../lib/haptics';
@@ -36,6 +38,13 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
   const [viewer, setViewer] = useState<null | { index: number; compare: boolean }>(null);
   const [weighing, setWeighing] = useState(false);
   const [monthPick, setMonthPick] = useState<number | null>(null);
+  const report = useReportInput();
+  const stats = useMemo(() => (report ? challengeStats(report) : null), [report]);
+  const series = useMemo(() => (report ? dailySeries(report) : null), [report]);
+  const teaser = useMemo(
+    () => (report && challenge && challenge.start_date <= today ? reportTeaser(weekReport(reportWeek(challenge.start_date, today), report), report.unit) : null),
+    [report, challenge, today],
+  );
   if (!profile || !challenge || !summary) return null;
 
   const attempt = history.findIndex((c) => c.id === challenge.id) + 1 || history.length;
@@ -88,6 +97,14 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
       goal: workoutGoal(profile), chart: 'bar', values: dayLogs.map((l) => ({ date: l.log_date, value: workoutMinutes(l) })) },
     { key: 'full', label: 'Full days', title: 'Full days per week', unit: 'full days', aggregate: 'total',
       values: dayLogs.map((l) => ({ date: l.log_date, value: isDayComplete(l, profile) ? 1 : 0 })) },
+    { key: 'tasks', label: 'Tasks', title: 'Share of daily tasks done', unit: '%', aggregate: 'average', chart: 'bar',
+      values: series?.tasks ?? [] },
+    { key: 'water', label: 'Water', title: 'Average water a day', unit: 'L/day', aggregate: 'average', decimals: 1,
+      goal: profile.water_goal_ml / 1000, values: series?.water ?? [] },
+    { key: 'kcal', label: 'Calories', title: 'Calories on fully logged days', unit: 'kcal/day', aggregate: 'average',
+      goal: profile.calorie_goal ?? undefined, chart: 'bar', values: series?.kcal ?? [] },
+    { key: 'protein', label: 'Protein', title: 'Protein on fully logged days', unit: 'g/day', aggregate: 'average',
+      goal: macroGoals(profile)?.protein || undefined, chart: 'bar', values: series?.protein ?? [] },
   ];
 
   return (
@@ -107,17 +124,21 @@ export function ProgressScreen({ openDay }: { openDay: (date: string) => void })
 
       <button
         className="card recap-btn"
-        onClick={() => (tap(), setRecap(mondayOf(today) === mondayOf(challenge.start_date) ? mondayOf(today) : toISODate(addDays(parseISO(mondayOf(today)), -7))))}
+        onClick={() => (tap(), setRecap(reportWeek(challenge.start_date, today)))}
       >
         <span className="icon-badge" style={{ background: 'var(--mint-tint)', color: 'var(--green-ink)' }}>
           <IconCalendarCheck size={22} />
         </span>
         <span className="row-text">
-          <span className="row-title">Weekly recap</span>
-          <span className="row-sub">How your week went, every week</span>
+          <span className="row-title">Weekly report</span>
+          <span className="row-sub">{teaser ?? 'How your week went, every week'}</span>
         </span>
         <IconChevron size={18} style={{ color: '#9aa59d' }} />
       </button>
+
+      {/* From day 2: the first finished day gives them something to add up. */}
+      {stats && stats.days > 1 && <SoFarCard s={stats} unit={unit} currentDay={summary.currentDay} />}
+      {stats && stats.days > 1 && <HabitsSoFarCard s={stats} />}
 
       <section className="card">
         <div className="card-head">

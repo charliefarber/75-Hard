@@ -1,0 +1,78 @@
+/* ---------- Weekly report (components/Recap.tsx) and the challenge so far (components/SoFar.tsx) ---------- */
+
+.rep-hero-title { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; }
+
+.rep-highlights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.rep-highlights li { display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 600; line-height: 1.35; color: var(--ink); }
+.rep-ico { width: 34px; height: 34px; border-radius: 11px; flex: none; display: inline-flex; align-items: center; justify-content: center; background: var(--mint-tint); color: var(--green-ink); }
+.rep-ico.t-weight, .rep-ico.t-full, .rep-ico.t-tasks { background: var(--mint-tint); color: var(--green-ink); }
+.rep-ico.t-steps { background: var(--steps-tint); color: #b4551a; }
+.rep-ico.t-workouts { background: var(--burn-tint, #fbe4ec); color: #b02a5c; }
+.rep-ico.t-water { background: var(--water-tint); color: var(--water); }
+.rep-ico.t-reading { background: var(--read-tint); color: var(--read); }
+.rep-ico.t-alcohol { background: #e6f2ea; color: var(--forest); }
+.rep-ico.t-food, .rep-ico.t-protein { background: #fbeedd; color: #a8611c; }
+
+.rep-card { background: var(--ground); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.rep-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.rep-head h3 { margin: 0; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.rep-head span { font-size: 12px; color: var(--muted); font-weight: 600; text-align: right; }
+.rep-big { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.rep-big strong { font-size: 26px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.rep-big span { font-size: 13px; color: var(--muted); font-weight: 600; }
+.rep-lines { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.rep-lines li { font-size: 13px; color: var(--ink-2); line-height: 1.4; }
+.rep-lines li b { color: var(--ink); font-weight: 700; }
+.rep-note { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.rep-pill { align-self: flex-start; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; background: var(--mint-tint); color: var(--green-ink); }
+.rep-pill.flat { background: var(--surface-2); color: var(--ink-2); }
+
+/* Habits by day */
+.rep-habits { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.rep-habits th, .rep-habits td { padding: 4px 0; text-align: center; font-size: 11px; font-weight: 700; color: var(--faint); }
+.rep-habits thead th { padding-bottom: 6px; }
+.rep-habits col.label { width: 31%; }
+.rep-habits col.count { width: 15%; }
+.rep-habits tbody th { text-align: left; font-size: 13px; color: var(--ink); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rep-habits tbody th svg { vertical-align: -3px; margin-right: 5px; }
+.rep-dot { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 10px; box-sizing: border-box; vertical-align: middle; }
+.rep-dot.on { background: var(--c); color: #fff; }
+.rep-dot.off { border: 2px solid #d3d9d0; }
+.rep-dot.none { width: 6px; height: 6px; border-radius: 3px; background: #e2e6df; }
+.rep-count { text-align: right !important; color: var(--ink) !important; font-size: 13px !important; white-space: nowrap; }
+.rep-count em { display: block; font-style: normal; font-size: 11px; font-weight: 700; color: var(--muted); }
+.rep-count em.up { color: var(--green-ink); }
+.h-workouts { --c: #d1366e; }
+.h-water { --c: var(--water-fill); }
+.h-reading { --c: var(--read); }
+.h-alcohol { --c: var(--green); }
+.h-steps { --c: var(--steps); }
+
+.rep-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.rep-mini { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rep-mini > span:first-child { font-size: 12px; font-weight: 700; color: var(--muted); }
+.rep-mini strong { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+.rep-mini small { font-size: 12px; color: var(--muted); line-height: 1.35; }
+
+.rep-focus { background: var(--mint-tint); border: 1.5px solid #c9e6d2; border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+.rep-focus h3 { margin: 0; font-size: 12px; font-weight: 700; color: var(--green-ink); text-transform: uppercase; letter-spacing: 0.04em; }
+.rep-focus strong { font-size: 17px; font-weight: 800; color: var(--ink); }
+.rep-focus p { margin: 0; font-size: 14px; line-height: 1.45; color: var(--ink-2); }
+
+/* The challenge so far */
+.sofar-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.sofar-stat { background: var(--ground); border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sofar-stat > span:first-child { font-size: 12px; font-weight: 700; color: var(--muted); }
+.sofar-stat strong { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; }
+.sofar-stat small { font-size: 12px; color: var(--muted); line-height: 1.35; }
+.sofar-note { margin: 0; font-size: 13px; color: var(--ink-2); line-height: 1.45; }
+.sofar-note b { color: var(--ink); }
+
+.habit-rows { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.habit-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) 118px; column-gap: 10px; row-gap: 5px; align-items: center; }
+.habit-row .rep-ico { width: 26px; height: 26px; border-radius: 9px; grid-row: span 2; }
+.habit-row-name { font-size: 14px; font-weight: 700; }
+.habit-row-pct { font-size: 15px; font-weight: 800; text-align: right; }
+.habit-row .meter { height: 8px; grid-column: 2 / 3; }
+.habit-row small { font-size: 11.5px; color: var(--muted); text-align: right; white-space: nowrap; }
+.habit-row.weak .habit-row-pct { color: #b4551a; }

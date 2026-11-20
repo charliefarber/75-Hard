@@ -17,7 +17,7 @@ A simple, good-looking daily tracker for the 75 Hard challenge. It's styled afte
 
 Not pass/fail, but tracked every day if she wants: **weight** (kg, lb or stone; the Progress tab shows each weigh-in and the 7-day average) and a **progress photo** (private, with a before/after compare). There's also a notes box for each day. The top of Today shows **Eaten · Burned · Steps** as rings (calories left under Eaten), with **net calories** underneath once she's logged some food.
 
-**A relaxed 75: nothing restarts and nothing moves.** It's always 75 calendar days from the start date. Each day is simply logged as it went: a **full day** when all four tasks are ticked off, otherwise **partly done** (the Progress calendar shows how many, e.g. 3/4). The **weekly recap** is where it adds up: the share of tasks done, full days, and each habit across the week. Days can be filled in or changed later from the Progress calendar (with a one-tap "Tick everything off" for past days). A manual **Restart at day 1** is still in Profile. Already partway through when signing up? Choose **Earlier**, pick the real start date, and optionally tick off every day so far. The start date can be changed later in Profile.
+**A relaxed 75: nothing restarts and nothing moves.** It's always 75 calendar days from the start date. Each day is simply logged as it went: a **full day** when all four tasks are ticked off, otherwise **partly done** (the Progress calendar shows how many, e.g. 3/4). The **weekly report** is where it adds up: the share of tasks done, full days, and each habit across the week. Days can be filled in or changed later from the Progress calendar (with a one-tap "Tick everything off" for past days). A manual **Restart at day 1** is still in Profile. Already partway through when signing up? Choose **Earlier**, pick the real start date, and optionally tick off every day so far. The start date can be changed later in Profile.
 
 ## Workouts and calories burned
 
@@ -60,7 +60,7 @@ For batch cooking. On the Food tab, **Meal prep → +** opens the batch: she add
 
 **By weight.** If she weighs the whole batch once it's cooked (when she saves it, or later with **Weigh** on the Meal prep card), she can log it by the gram: "100 g" of a 1,200 g batch is a twelfth of everything that went in. Weighed batches open on **Grams** in the add sheet (starting from what she had last time), show what's left in grams, and their one-tap chip repeats her last amount. Grams count down as their share of a portion, so portions and grams can be mixed, and an entry can be switched between them when editing. Needs migration `0017_meal_prep_weight.sql`; batches without a weight work as before.
 
-The day's total is written to `daily_logs.calories` as the diary changes, so Today, the weekly recap and Progress all agree. Moving over from Lifesum: the first time something is logged in the diary on a day that already has Lifesum calories, those calories become one "Logged in Lifesum" entry so the day's total doesn't drop, and from then on the diary wins over Apple Health for that day.
+The day's total is written to `daily_logs.calories` as the diary changes, so Today, the weekly report and Progress all agree. Moving over from Lifesum: the first time something is logged in the diary on a day that already has Lifesum calories, those calories become one "Logged in Lifesum" entry so the day's total doesn't drop, and from then on the diary wins over Apple Health for that day.
 
 Open Food Facts is called straight from the phone (their limits are per person; search waits until she pauses typing), and falls back to the `food` server function if a request is blocked.
 
@@ -68,9 +68,18 @@ Open Food Facts is called straight from the phone (their limits are per person; 
 
 Weigh-ins are stored in kg and shown in her unit. Photos are shrunk on the phone (1600 px plus a small gallery copy) and re-encoded, which strips the hidden location data an iPhone camera adds, then go to a **private** storage bucket where each account can only reach its own folder. The app shows them through links that expire after an hour. Download my data lists them, and deleting the account deletes them.
 
-## Weekly recap
+## Weekly report and progress
 
-The first time the app is opened in a new week, a "Your week" card sums up the last Monday–Sunday: the share of tasks done, full days (a dot per day; partly done days show e.g. 3/4), steps against the weekly goal, average water, workouts, reading, alcohol-free days and average calories eaten. Every week can be revisited from Progress → Weekly recap.
+The first time the app is opened in a new week, the **weekly report** sums up the last Monday–Sunday; every week can be revisited from Progress → Weekly report (the button shows last week in a line). It's worked out on the phone from what she already logs (`src/lib/report.ts`):
+
+- **Headline and highlights**: up to three wins her numbers back up (a personal best once there are two earlier weeks to beat, a habit up on last week, a streak, the weight trend down, food or protein on target). The headline names the biggest one; a slow week still gets a kind word.
+- **Habits by day**: workouts, water, reading, alcohol-free and steps (days at the daily share of the weekly goal) against each day, with the change on last week. Today's unticked tasks are "to do", not missed.
+- **Weight**: the 7-day average at the end of the week against a week earlier, and since day 1. A rise is explained as normal water movement, never made a highlight.
+- **Food**: days logged, average calories against her goal, protein / carbs / fat against her targets, eaten minus burned, her biggest meal and the foods she logged most. **Averages only use days that look fully logged** (two or more meals and at least half her calorie goal); part-logged days count as logged and the report says how many were left out.
+- **Activity**: steps against the weekly goal and last week, workout time, sessions, calories and her most-done activities.
+- **One focus for next week**: the habit furthest from its goal with one concrete step ("Try 1.5 L by lunch and the rest by dinner"), or "keep it going". It never suggests eating less.
+
+The Progress tab adds **Your 75 so far** (tasks done, full days and best run, weight change with the weekly pace and, after three weeks of weigh-ins, where that pace lands on day 75, steps, workout hours, food days with average calories and protein, pages read, alcohol-free days) and **Habits so far** (each task's hit rate, best run, and which one slips most and when). Week by week can also chart tasks done, water, calories and protein.
 
 ## Birthday pass
 

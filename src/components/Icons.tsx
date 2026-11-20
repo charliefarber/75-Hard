@@ -45,6 +45,9 @@ export const IconHeart = (p: P) => (
 export const IconLeaf = (p: P) => (
   <svg {...base(p)}><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10z" /><path d="M2 21c0-3 1.9-5.4 5.2-6" /></svg>
 );
+export const IconDrop = (p: P) => (
+  <svg {...base(p)}><path d="M12 2.7c3.4 4 6 7.4 6 11.1a6 6 0 0 1-12 0c0-3.7 2.6-7.1 6-11.1z" /></svg>
+);
 export const IconChevron = (p: P) => <svg {...base(p)}><path d="M9 6l6 6-6 6" /></svg>;
 export const IconChevronLeft = (p: P) => <svg {...base(p)}><path d="M15 6l-6 6 6 6" /></svg>;
 export const IconRefresh = (p: P) => (
