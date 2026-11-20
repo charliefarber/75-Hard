@@ -20,6 +20,8 @@ import { FoodThumb, MacroBars, MacroLine } from '../components/food/bits';
 import { MealIcon, PrepIcon } from '../components/food/MealIcon';
 import { MealSuggestions, type QuickOption } from '../components/food/QuickLog';
 import { MealPrepSheet } from '../components/food/MealPrepSheet';
+import { FoodPatternsCard } from '../components/food/Patterns';
+import { PATTERN_DAYS } from '../lib/patterns';
 import { success, tap } from '../lib/haptics';
 import '../styles/food.css';
 
@@ -43,10 +45,11 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
   const yesterday = toISODate(addDays(parseISO(date), -1));
 
   const { ensure } = food;
-  const twoWeeksBack = addIsoDays(date, -14);
+  // Two weeks of history for "your usual"; on today, four for the patterns card.
+  const historyFrom = addIsoDays(date, date === today ? -PATTERN_DAYS : -14);
   useEffect(() => {
-    ensure(twoWeeksBack, date); // two weeks of history for "your usual"
-  }, [ensure, twoWeeksBack, date]);
+    ensure(historyFrom, date);
+  }, [ensure, historyFrom, date]);
 
   const entries = food.entriesFor(date);
   const meals = useMemo(() => byMeal(entries), [entries]);
@@ -323,6 +326,16 @@ export function FoodScreen({ date, setDate }: { date: string; setDate: (d: strin
           <p className="card-sub prep-empty">Cooked a batch? Add everything that went in, split it into portions (or weigh it), then log a portion or a few grams in one tap.</p>
         )}
       </section>
+
+      {isToday && (
+        <FoodPatternsCard
+          today={today}
+          entriesFor={food.entriesFor}
+          isLoaded={food.isLoaded}
+          calorieGoal={goal ?? null}
+          onLog={(e, meal) => logCopies([e], meal, `${e.name.trim()} added to ${meal}`)}
+        />
+      )}
 
       <MealPrepSheet
         open={prepOpen}
